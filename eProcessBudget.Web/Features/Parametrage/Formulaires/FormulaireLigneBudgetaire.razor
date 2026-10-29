@@ -1,0 +1,38 @@
+@inherits FormulaireBase<LigneBudgetaire>
+@inject IReferentielService<NatureDepense> ServiceNatureDepense
+@inject IReferentielService<NatureRecette> ServiceNatureRecette
+@inject IReferentielService<SourceFinancement> ServiceSourceFinancement
+@inject IReferentielService<SousRubrique> ServiceSousRubrique
+
+@* Formulaire de saisie : LigneBudgetaire. Généré à l'identique pour tous les référentiels ; les règles sont dans CatalogueReferentiels. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div class="sm:col-span-2"><ChoixReference Label="Sous-rubrique" Elements="_sousRubriques" Obligatoire="true"
+                    Value="Element.SousRubriqueId" ValueChanged="v => Element.SousRubriqueId = v ?? Ulid.Empty" /></div>
+    <MudTextField @bind-Value="Element.Code" Label="Code" MaxLength="30" Required="true" RequiredError="Code : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <ChoixEnum TEnum="SensLigne" Label="Sens" Libelles="LibellesParametrage.SensLigne" @bind-Value="Element.Sens" />
+    <MudTextField @bind-Value="Element.Libelle" Label="Libellé" MaxLength="250" Required="true" RequiredError="Libellé : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+    <div><ChoixReference Label="Nature de dépense" Elements="_naturesDepense" Disabled="@(Element.Sens != SensLigne.Depense)"
+                    Value="Element.NatureDepenseId" ValueChanged="v => Element.NatureDepenseId = v" /></div>
+    <div><ChoixReference Label="Nature de recette" Elements="_naturesRecette" Disabled="@(Element.Sens != SensLigne.Recette)"
+                    Value="Element.NatureRecetteId" ValueChanged="v => Element.NatureRecetteId = v" /></div>
+    <div><ChoixReference Label="Source de financement" Elements="_sources" Obligatoire="true"
+                    Value="Element.SourceFinancementId" ValueChanged="v => Element.SourceFinancementId = v ?? Ulid.Empty" /></div>
+</div>
+
+@code {
+    private List<ElementListe> _sousRubriques = new();
+    private List<ElementListe> _naturesDepense = new();
+    private List<ElementListe> _naturesRecette = new();
+    private List<ElementListe> _sources = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _sousRubriques = await ServiceSousRubrique.ListerPourSelectionAsync();
+        _naturesDepense = await ServiceNatureDepense.ListerPourSelectionAsync();
+        _naturesRecette = await ServiceNatureRecette.ListerPourSelectionAsync();
+        _sources = await ServiceSourceFinancement.ListerPourSelectionAsync();
+    }
+}

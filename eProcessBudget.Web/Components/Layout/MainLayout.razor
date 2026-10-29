@@ -1,0 +1,337 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@using Microsoft.Extensions.Options
+@using Microsoft.AspNetCore.Components.Routing
+@using eProcessBudget.Web.Features.Aide
+@inject IUserContextService UserContext
+@inject IDroitService Droits
+@inject IAuthentificationService Authentification
+@inject IJSRuntime JS
+@inject IOptions<ApplicationOptions> AppOptions
+@inject NavigationManager Navigation
+
+@*
+    Layout principal : barre latérale repliable + en-tête + zone de contenu.
+
+    La barre latérale est construite à partir de MenuApplication.Sections et filtrée
+    selon les droits de l'utilisateur. Les droits sont résolus UNE fois à l'initialisation
+    (avec un cache par droit), pas à chaque rendu.
+*@
+
+<MudThemeProvider Theme="_theme" />
+<MudPopoverProvider />
+<MudDialogProvider FullWidth="true" MaxWidth="MaxWidth.Medium"
+                   CloseButton="true" Position="DialogPosition.Center" />
+<MudSnackbarProvider />
+
+<div class="flex h-screen bg-gray-50 overflow-hidden">
+
+    <!-- ═══ Barre latérale ═══════════════════════════════════════════════ -->
+    <aside class="@(_ouverte ? "w-64" : "w-16") flex flex-col transition-all duration-300 ease-in-out shadow-md flex-shrink-0"
+           style="background-color: var(--app-secondaire);">
+
+        <!-- Logo et bouton de repli -->
+        <div class="@(_ouverte ? "flex items-center justify-between gap-2 px-4" : "flex flex-col items-center gap-3 px-2") py-4 border-b border-white/10">
+            @if (_ouverte)
+            {
+                <a href="/" class="min-w-0" aria-label="Accueil">
+                    <AppMarque FondSombre="true" />
+                </a>
+            }
+            else
+            {
+                <a href="/" class="flex-shrink-0" aria-label="Accueil">
+                    <AppLogo FondSombre="true" Pixels="32" Style="width:2rem;height:2rem;font-size:0.75rem;" />
+                </a>
+            }
+
+            <button @onclick="() => _ouverte = !_ouverte" data-guide="menu-replier"
+                    class="text-white/60 hover:text-white transition-colors p-1 rounded flex-shrink-0 @(_ouverte ? "ml-auto" : "")"
+                    title="@(_ouverte ? "Replier le menu" : "Déplier le menu")"
+                    aria-label="@(_ouverte ? "Replier le menu" : "Déplier le menu")">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="@(_ouverte ? "M15 19l-7-7 7-7" : "M9 5l7 7-7 7")" />
+                </svg>
+            </button>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto py-4 px-2" data-guide="menu">
+            @if (!_menuCharge)
+            {
+                <div class="flex justify-center py-6">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Default" Size="Size.Small" />
+                </div>
+            }
+            else
+            {
+                @foreach (var bloc in MenuApplication.Sections)
+                {
+                    var visibles = bloc.Entrees.Where(EstVisible).ToList();
+                    if (visibles.Count == 0) continue;   // section entièrement masquée
+
+                    var depliee = bloc.Titre is null || !_ouverte || _sectionOuverte == bloc.Titre;
+
+                    @if (bloc.Titre is not null)
+                    {
+                        @if (_ouverte)
+                        {
+                            <div class="mt-2 first:mt-0">
+                                <div class="h-px bg-white/10 mx-2 mb-2"></div>
+                                <button type="button" @onclick="() => Basculer(bloc.Titre)"
+                                        class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors
+                                               @(depliee ? "text-white bg-white/5" : "text-white/80 hover:text-white hover:bg-white/10")"
+                                        aria-expanded="@(depliee ? "true" : "false")">
+                                    <span class="flex-shrink-0 w-5 h-5"><AppIcon Nom="@bloc.Icone" /></span>
+                                    <span class="flex-1 text-[11px] font-bold uppercase tracking-widest truncate">@bloc.Titre</span>
+                                    <svg class="w-4 h-4 flex-shrink-0 transition-transform duration-200 @(depliee ? "rotate-90" : "")"
+                                         fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                    </svg>
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="mt-4 mb-2 h-px bg-white/10 mx-2"></div>
+                        }
+                    }
+
+                    @if (depliee)
+                    {
+                        <div class="space-y-1 @(bloc.Titre is not null && _ouverte ? "mt-1 mb-2 pl-3 ml-3 border-l border-white/10" : "")">
+                            @foreach (var entree in visibles)
+                            {
+                                <NavItem Href="@entree.Href" Icone="@entree.Icone"
+                                         Label="@entree.Label" Ouvert="_ouverte" />
+                            }
+                        </div>
+                    }
+                }
+            }
+        </nav>
+
+        <!-- Utilisateur connecté -->
+        <div class="border-t border-white/10 p-3" data-guide="utilisateur">
+            @* Déconnexion : vraie requête POST (le cookie se retire côté serveur). Aussi
+               soumis par wwwroot/js/session.js après la durée d'inactivité. *@
+            <form id="form-deconnexion" action="@ConfigurationSecurite.CheminDeconnexion" method="post">
+                <input type="hidden" name="motif" value="volontaire" />
+            </form>
+
+            @if (_ouverte)
+            {
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                         style="background-color: var(--app-accent); color: var(--app-secondaire);">
+                        @Initiales(_nomUtilisateur)
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-white text-xs font-medium truncate">@_nomUtilisateur</p>
+                        @if (_estPlateforme)
+                        {
+                            <p class="text-white/50 text-[11px] truncate">Administrateur plateforme</p>
+                        }
+                    </div>
+                    <a href="/compte/mot-de-passe" class="text-white/60 hover:text-white p-1 rounded"
+                       title="Mon mot de passe" aria-label="Mon mot de passe">
+                        <span class="block w-4 h-4"><AppIcon Nom="key" /></span>
+                    </a>
+                    <button type="submit" form="form-deconnexion" class="text-white/60 hover:text-white p-1 rounded"
+                            title="Se déconnecter" aria-label="Se déconnecter">
+                        <span class="block w-4 h-4"><AppIcon Nom="logout" /></span>
+                    </button>
+                </div>
+            }
+            else
+            {
+                <div class="flex flex-col items-center gap-2">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                         style="background-color: var(--app-accent); color: var(--app-secondaire);"
+                         title="@_nomUtilisateur">
+                        @Initiales(_nomUtilisateur)
+                    </div>
+                    <button type="submit" form="form-deconnexion" class="text-white/60 hover:text-white p-1 rounded"
+                            title="Se déconnecter" aria-label="Se déconnecter">
+                        <span class="block w-4 h-4"><AppIcon Nom="logout" /></span>
+                    </button>
+                </div>
+            }
+        </div>
+    </aside>
+
+    <!-- ═══ Contenu ══════════════════════════════════════════════════════ -->
+    <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+        <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shadow-sm flex-shrink-0">
+            <span class="text-gray-600 font-medium text-sm">@AppOptions.Value.Nom</span>
+            <div class="flex items-center gap-1">
+                <BoutonAide />
+                <div data-guide="notifications"><NotificationBell /></div>
+            </div>
+        </header>
+
+        <main class="flex-1 overflow-y-auto bg-gray-50 p-6">
+            @*
+                Une exception imprévue d'une page (conflit d'enregistrement, base indisponible...)
+                s'affiche ici au lieu de fermer le circuit : le reste de l'application reste utilisable.
+                Elle est journalisée par le framework ; la navigation suivante réarme la limite.
+            *@
+            <ErrorBoundary @ref="_limiteErreur">
+                <ChildContent>@Body</ChildContent>
+                <ErrorContent>
+                    <AppAlert Variante="danger" Titre="Une erreur inattendue est survenue">
+                        L'opération n'a pas abouti. Les données ont pu être modifiées entre-temps par un autre
+                        utilisateur : rechargez la page avant de réessayer. Si le problème persiste, contactez
+                        votre administrateur.
+                        <div class="mt-3">
+                            <AppButton Variante="secondary" OnClick="Recharger">Recharger la page</AppButton>
+                        </div>
+                    </AppAlert>
+                </ErrorContent>
+            </ErrorBoundary>
+        </main>
+    </div>
+</div>
+
+@code {
+    private bool _ouverte = true;
+    private bool _menuCharge;
+
+    /// <summary>Section dépliée (une seule à la fois) ; null : toutes repliées.</summary>
+    private string? _sectionOuverte;
+    private string _nomUtilisateur = "";
+    private bool _estPlateforme;
+
+    /// <summary>Routes que l'utilisateur a le droit de voir. Calculé une fois à l'initialisation.</summary>
+    private HashSet<string> _routesAutorisees = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _nomUtilisateur = await UserContext.ObtenirNomAsync();
+        _estPlateforme = await UserContext.EstAdministrateurPlateformeAsync();
+
+        var userId = await UserContext.ObtenirUserIdAsync();
+        await ChargerMenuAsync(userId);
+        _menuCharge = true;
+
+        _sectionOuverte = SectionDe(Navigation.Uri);
+        Navigation.LocationChanged += SurNavigation;
+    }
+
+    /// <summary>Un clic sur un titre déplie sa section et replie les autres ; un second clic la replie.</summary>    /// 
+    private void Basculer(string titre) => _sectionOuverte = _sectionOuverte == titre ? null : titre;
+
+    /// <summary>
+    /// En arrivant sur une page, sa section se déplie ; la visite guidée en cours s'arrête,
+    /// sauf si la nouvelle adresse en demande une (lien « Lancer la visite » du guide).
+    /// </summary>
+    private void SurNavigation(object? sender, LocationChangedEventArgs e)
+    {
+        // Une erreur affichée ne suit pas l'utilisateur sur la page suivante.
+        _ = InvokeAsync(() => _limiteErreur?.Recover());
+
+        _ = InvokeAsync(async () =>
+        {
+            if (!await VisitesGuidees.DemandeeAsync(JS, Navigation.ToBaseRelativePath(e.Location), AppOptions.Value.Nom))
+                await VisitesGuidees.ArreterAsync(JS);
+        });
+
+        if (SectionDe(e.Location) is not { } section || section == _sectionOuverte) return;
+        _sectionOuverte = section;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Section titrée dont une entrée correspond le mieux à l'adresse (préfixe le plus long).</summary>
+    private string? SectionDe(string uri)
+    {
+        var chemin = "/" + Navigation.ToBaseRelativePath(uri).Split('?', '#')[0].TrimEnd('/');
+        return MenuApplication.Sections
+            .Where(s => s.Titre is not null)
+            .SelectMany(s => s.Entrees.Select(e => (s.Titre, e.Href)))
+            .Where(x => x.Href != "/" && (chemin == x.Href || chemin.StartsWith(x.Href + "/", StringComparison.OrdinalIgnoreCase)))
+            .OrderByDescending(x => x.Href.Length)
+            .Select(x => x.Titre)
+            .FirstOrDefault() ?? _sectionOuverte;
+    }
+
+    private ErrorBoundary? _limiteErreur;
+
+    /// <summary>Recharge complètement la page en erreur : ses données sont relues en base.</summary>
+    private void Recharger() => Navigation.Refresh(forceReload: true);
+
+    public void Dispose() => Navigation.LocationChanged -= SurNavigation;
+
+    /// <summary>Démarre le suivi d'inactivité dans le navigateur, avec la durée de l'organisme.</summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        var duree = await Authentification.ObtenirDureeSessionAsync(await UserContext.ObtenirOrganismeIdAsync());
+        try
+        {
+            await JS.InvokeVoidAsync("epbSession.demarrer", (int)duree.TotalMinutes);
+        }
+        catch (JSDisconnectedException)
+        {
+            // Onglet fermé pendant le premier rendu : rien à suivre.
+            return;
+        }
+
+        // Visite demandée par l'adresse, sinon visite de l'interface à la première connexion.
+        if (!await VisitesGuidees.DemandeeAsync(JS, Navigation.ToBaseRelativePath(Navigation.Uri), AppOptions.Value.Nom)
+            && await UserContext.ObtenirUserIdAsync() is var userId && userId != Ulid.Empty)
+        {
+            await VisitesGuidees.PremiereVisiteAsync(JS, userId, AppOptions.Value.Nom);
+        }
+    }
+
+    /// <summary>Résout la visibilité de chaque entrée, en une seule lecture des droits.</summary>
+    private async Task ChargerMenuAsync(Ulid userId)
+        => _routesAutorisees = await MenuApplication.RoutesAutoriseesAsync(Droits, userId);
+
+    private bool EstVisible(EntreeMenu entree) => _routesAutorisees.Contains(entree.Href);
+
+    private static string Initiales(string? nom)
+    {
+        if (string.IsNullOrWhiteSpace(nom)) return "?";
+
+        var mots = nom.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return mots.Length >= 2
+            ? $"{mots[0][0]}{mots[1][0]}".ToUpperInvariant()
+            : nom[..Math.Min(2, nom.Length)].ToUpperInvariant();
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    //  Thème MudBlazor, construit depuis la charte de appsettings.json.
+    //  Les composants MudBlazor utilisent ce thème ; les composants Tailwind
+    //  utilisent les variables CSS. Les deux lisent la même source.
+    // ═════════════════════════════════════════════════════════════════════
+    private MudTheme _theme = new();
+
+    protected override void OnParametersSet()
+    {
+        var c = AppOptions.Value.Couleurs;
+
+        _theme = new MudTheme
+        {
+            PaletteLight = new PaletteLight
+            {
+                Primary          = c.Primaire,
+                Secondary        = c.Secondaire,
+                Tertiary         = c.Accent,
+                Background       = "#f8f9fa",
+                Surface          = "#ffffff",
+                AppbarBackground = c.Secondaire,
+                DrawerBackground = c.Secondaire,
+                DrawerText       = "rgba(255,255,255,0.7)",
+                DrawerIcon       = "rgba(255,255,255,0.7)",
+                TextPrimary      = "#1a1a2e",
+                TextSecondary    = "#6b7280",
+                ActionDefault    = "#6b7280"
+            }
+        };
+    }
+}
+
+

@@ -1,0 +1,121 @@
+@page "/budget-programme/analyses"
+@inject IAnalyseService Service
+@inject IReferentielService<Programme> ServiceProgramme
+@inject IReferentielService<Rubrique> ServiceRubrique
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Analyses — Budget-programme</PageTitle>
+
+@*
+    Analyses qualitatives de l'exercice (§ 3.3.8) : contraintes relevées, priorités et
+    actions stratégiques, défis majeurs, recommandations, commentaires de rubrique. Saisie
+    par les utilisateurs habilités, dans un exercice ouvert.
+*@
+
+<AutoriseSi DroitsRequis="CatalogueReferentiels.LectureBudgetProgramme">
+    <PageHeader Titre="Analyses qualitatives" Description="Contraintes, priorités, défis et recommandations de l'exercice.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span>
+            <a href="/budget-programme" class="hover:underline">Budget-programme</a>
+        </BreadcrumbContent>
+        <ActionsContent>
+            @if (_peutSaisir && _exercice?.Statut == StatutExercice.Ouvert)
+            {
+                <AppButton Icone="plus" OnClick="() => EditerAsync(null)">Nouvelle analyse</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-6">
+        <div class="flex flex-col sm:flex-row gap-3">
+            <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+            <MudSelect T="TypeAnalyse?" Value="_type" ValueChanged="ChangerTypeAsync" Label="Type (tous si vide)" Clearable="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:240px"
+                       ToStringFunc="@(t => t is { } v ? LibellesBudgetProgramme.Analyse[v] : "")">
+                @foreach (var (type, libelle) in LibellesBudgetProgramme.Analyse)
+                {
+                    <MudSelectItem T="TypeAnalyse?" Value="@type">@libelle</MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+    </AppCard>
+
+    @if (_analyses.Count == 0)
+    {
+        <AppCard><EtatVide Icone="document-text" Titre="Aucune analyse" Message="Les analyses se saisissent sur un exercice ouvert." /></AppCard>
+    }
+    else
+    {
+        @foreach (var groupe in _analyses.GroupBy(a => a.Type))
+        {
+            <h2 class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2 mt-4">@LibellesBudgetProgramme.Analyse[groupe.Key]</h2>
+            <div class="space-y-3">
+                @foreach (var a in groupe)
+                {
+                    <AppCard>
+                        <div class="flex items-start gap-3">
+                            <div class="flex-1 min-w-0">
+                                @if (a.Programme is not null || a.Rubrique is not null)
+                                {
+                                    <p class="text-xs text-gray-500 mb-1">@(a.Programme ?? a.Rubrique)</p>
+                                }
+                                <p class="text-sm text-gray-800 whitespace-pre-line">@a.Contenu</p>
+                            </div>
+                            @if (_peutSaisir && _exercice?.Statut == StatutExercice.Ouvert)
+                            {
+                                <div class="flex whitespace-nowrap">
+                                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditerAsync(a)" />
+                                    <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerAsync(a)" />
+                                </div>
+                            }
+                        </div>
+                    </AppCard>
+                }
+            </div>
+        }
+    }
+</AutoriseSi>
+
+@code {
+    private LigneExercice? _exercice;
+    private TypeAnalyse? _type;
+    private List<LigneAnalyse> _analyses = new();
+    private bool _peutSaisir;
+
+    protected override async Task OnInitializedAsync()
+        => _peutSaisir = await Droits.ADroitAsync(await UserContext.ObtenirUserIdAsync(), TypeDroit.BudgetProgrammeDefinir, TypeDroit.IndicateurSaisirRealisation);
+
+    private async Task ChangerExerciceAsync(LigneExercice? e) { _exercice = e; await ChargerAsync(); }
+    private async Task ChangerTypeAsync(TypeAnalyse? t) { _type = t; await ChargerAsync(); }
+
+    private async Task ChargerAsync() => _analyses = _exercice is null ? new() : await Service.ListerAsync(_exercice.Id, _type);
+
+    private async Task EditerAsync(LigneAnalyse? a)
+    {
+        var saisie = new SaisieAnalyse
+        {
+            Id = a?.Id ?? Ulid.Empty, ExerciceId = _exercice!.Id, Type = a?.Type ?? _type ?? TypeAnalyse.Contrainte,
+            ProgrammeId = a?.ProgrammeId, RubriqueId = a?.RubriqueId, Contenu = a?.Contenu ?? "", Ordre = a?.Ordre ?? 0
+        };
+        var parametres = new DialogParameters<DialogAnalyse> { { x => x.Saisie, saisie } };
+        var dialog = await DialogService.ShowAsync<DialogAnalyse>(a is null ? "Nouvelle analyse" : "Modifier l'analyse", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) { Snackbar.Add("Analyse enregistrée.", Severity.Success); await ChargerAsync(); }
+    }
+
+    private async Task SupprimerAsync(LigneAnalyse a)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, "Supprimer l'analyse" }, { x => x.Message, "L'analyse est supprimée (suppression logique)." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+        var (ok, erreur) = await Service.SupprimerAsync(a.Id);
+        Snackbar.Add(ok ? "Analyse supprimée." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync();
+    }
+}

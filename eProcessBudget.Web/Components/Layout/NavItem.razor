@@ -1,0 +1,33 @@
+@*
+    Entrée de la barre latérale. L'état actif est géré par NavLink, qui pose la classe
+    « active » ; la mise en forme correspondante est dans app.css (.nav-item.active).
+*@
+
+<NavLink href="@Href"
+         Match="@(Href == "/" ? NavLinkMatch.All : NavLinkMatch.Prefix)"
+         class="@Classes"
+         title="@(Ouvert ? null : Label)">
+    <span class="flex-shrink-0 w-5 h-5">
+        <AppIcon Nom="@Icone" />
+    </span>
+    @if (Ouvert)
+    {
+        <span class="text-sm font-medium truncate">@Label</span>
+    }
+</NavLink>
+
+@code {
+    [Parameter] public string Href { get; set; } = "/";
+    [Parameter] public string Icone { get; set; } = "home";
+    [Parameter] public string Label { get; set; } = "";
+
+    /// <summary>false quand la barre latérale est repliée : on n'affiche que l'icône.</summary>
+    [Parameter] public bool Ouvert { get; set; } = true;
+
+    private string Classes =>
+        "nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-white/70 " +
+        "hover:text-white hover:bg-white/10 transition-all duration-150 " +
+        (Ouvert ? "" : "justify-center");
+}
+
+

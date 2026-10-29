@@ -1,0 +1,12 @@
+<Project>
+  <!--
+    Réglages communs à tous les projets de la solution.
+    .NET 10 est une version LTS (support jusqu'en novembre 2028).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+</Project>

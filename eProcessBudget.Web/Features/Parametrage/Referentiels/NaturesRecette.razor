@@ -1,0 +1,23 @@
+@page "/parametrage/natures-recette"
+
+<PageTitle>Paramétrage</PageTitle>
+
+@* Référentiel NatureRecette : colonnes de la liste. Tout le reste (droits, filtres, saisie, Excel) vient de PageReferentiel. *@
+
+<PageReferentiel T="NatureRecette" Formulaire="typeof(FormulaireNatureRecette)"
+                 Description="Recettes propres, taxes affectées, ressources additionnelles et externes, reports.">
+    <EnTetes>
+        <MudTh>Code</MudTh>
+        <MudTh>Libellé</MudTh>
+        <MudTh>Catégorie</MudTh>
+        <MudTh>Regroupement</MudTh>
+        <MudTh>Par site</MudTh>
+    </EnTetes>
+    <Colonnes>
+        <MudTd DataLabel="Code"><span class="font-mono text-xs font-semibold text-gray-800">@context.Code</span></MudTd>
+        <MudTd DataLabel="Libellé"><span class="text-sm text-gray-700">@context.Libelle</span></MudTd>
+        <MudTd DataLabel="Catégorie"><span class="text-sm text-gray-500">@LibellesParametrage.De(LibellesParametrage.CategorieRecette, context.CategorieRecette)</span></MudTd>
+        <MudTd DataLabel="Regroupement"><span class="text-sm text-gray-500">@(context.NatureParent?.Code ?? "—")</span></MudTd>
+        <MudTd DataLabel="Par site"><span class="text-sm text-gray-500">@(context.SuiviParSite ? "Oui" : "—")</span></MudTd>
+    </Colonnes>
+</PageReferentiel>

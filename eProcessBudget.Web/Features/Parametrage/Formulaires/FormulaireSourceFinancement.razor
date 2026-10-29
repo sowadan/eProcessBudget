@@ -1,0 +1,22 @@
+@inherits FormulaireBase<SourceFinancement>
+@inject IReferentielService<Tiers> ServiceTiers
+
+@* Formulaire de saisie : SourceFinancement. Généré à l'identique pour tous les référentiels ; les règles sont dans CatalogueReferentiels. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <MudTextField @bind-Value="Element.Code" Label="Code" MaxLength="10" Required="true" RequiredError="Code : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Libelle" Label="Libellé" MaxLength="150" Required="true" RequiredError="Libellé : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <div class="sm:col-span-2"><ChoixReference Label="Partenaire financier" Elements="_partenaires" HelperText="Pour une ressource externe."
+                    Value="Element.PartenaireFinancierId" ValueChanged="v => Element.PartenaireFinancierId = v" /></div>
+</div>
+
+@code {
+    private List<ElementListe> _partenaires = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _partenaires = await ServiceTiers.ListerPourSelectionAsync(t => t.TypeTiers == TypeTiers.PartenaireFinancier);
+    }
+}

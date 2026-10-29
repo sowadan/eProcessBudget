@@ -1,0 +1,69 @@
+@inject IPrevisionRecetteService Service
+@inject IReferentielService<Site> ServiceSite
+@inject IReferentielService<Tiers> ServiceTiers
+
+@*
+    Prévision de recette : ligne, nature (celle de la ligne ou une sous-nature), site (exigé
+    pour une nature suivie par poste), organisme collecteur, prévision initiale. Exercice
+    ouvert : la prévision naît à 0 et se révise.
+*@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="sm:col-span-2">
+                <ChoixReference Label="Ligne de recette" Elements="_lignes" Obligatoire="true" Value="Saisie.LigneBudgetaireId" ValueChanged="ChangerLigneAsync" />
+            </div>
+            <div class="sm:col-span-2">
+                <ChoixReference Label="Nature (par défaut, celle de la ligne)" Elements="_natures" Value="Saisie.NatureRecetteId"
+                                ValueChanged="v => Saisie.NatureRecetteId = v" />
+            </div>
+            <ChoixReference Label="Site (poste de péage ou de pesage)" Elements="_sites" Value="Saisie.SiteId" ValueChanged="v => Saisie.SiteId = v" />
+            <ChoixReference Label="Organisme collecteur" Elements="_collecteurs" Value="Saisie.TiersCollecteurId" ValueChanged="v => Saisie.TiersCollecteurId = v" />
+            <MudNumericField T="decimal" @bind-Value="Saisie.MontantInitial" Label="Prévision initiale" Min="0" Format="N2"
+                             Disabled="!EnPreparation" Variant="Variant.Outlined" Margin="Margin.Dense"
+                             HelperText="@(EnPreparation ? "Figée à l'ouverture de l'exercice." : "Exercice ouvert : révisez la prévision après sa création.")" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public SaisiePrevision Saisie { get; set; } = new();
+    [Parameter] public bool EnPreparation { get; set; }
+
+    private List<ElementListe> _lignes = new(), _natures = new(), _sites = new(), _collecteurs = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _lignes = await Service.ListerLignesAsync();
+        _sites = await ServiceSite.ListerPourSelectionAsync();
+        _collecteurs = await ServiceTiers.ListerPourSelectionAsync(t => t.TypeTiers == TypeTiers.OrganismeCollecteur);
+        if (Saisie.LigneBudgetaireId is { } ligne) _natures = await Service.ListerNaturesAsync(ligne);
+    }
+
+    private async Task ChangerLigneAsync(Ulid? ligneId)
+    {
+        Saisie.LigneBudgetaireId = ligneId;
+        Saisie.NatureRecetteId = null;
+        _natures = ligneId is { } id ? await Service.ListerNaturesAsync(id) : new();
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.EnregistrerAsync(Saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

@@ -1,0 +1,154 @@
+@page "/recettes"
+@inject ISyntheseRecetteService Synthese
+
+<PageTitle>Recettes — Synthèse</PageTitle>
+
+@*
+    Synthèse des recettes d'un exercice (cahier fonctionnel § 3.9) : indicateurs clés (taux
+    de recouvrement, niveau des recettes, taux d'accroissement, ressources additionnelles),
+    évolution mensuelle face à N-1, ventilation par catégorie, nature (en regard de la
+    programmation triennale), site et collecteur ; comparaison des sites sur trois exercices.
+*@
+
+<AutoriseSi DroitsRequis="AccesRecettes.Lecture">
+    <PageHeader Titre="Recettes" Description="Prévision et suivi mensuel des ressources de l'organisme.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><span>Recettes</span>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+    </AppCard>
+
+    @if (_indicateurs is { } i)
+    {
+        <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
+            <AppStatCard Label="Prévision retenue" Valeur="@Formats.Montant(i.Montants.PrevisionRetenue)" Icone="collection"
+                         SousTitre="@($"Initiale {Formats.Montant(i.Montants.PrevisionInitiale)}")" />
+            <AppStatCard Label="Encaissé (niveau des recettes)" Valeur="@Formats.Montant(i.Niveau)" Icone="cash"
+                         SousTitre="@($"Taux de recouvrement {Formats.Taux(i.Montants.TauxRecouvrement)}")" CouleurFond="#DCFCE7" CouleurIcone="#15803D" />
+            <AppStatCard Label="Accroissement / N-1" Valeur="@Formats.Taux(i.TauxAccroissement)" Icone="chart-bar"
+                         SousTitre="@(i.MoisCompares == 0 ? "Aucun encaissement" : $"Sur {i.MoisCompares} mois · N-1 : {Formats.Montant(i.EncaisseN1Comparable)}")"
+                         CouleurFond="#FEF3C7" CouleurIcone="#B45309" />
+            <AppStatCard Label="Ressources additionnelles" Valeur="@Formats.Montant(i.RessourcesAdditionnelles)" Icone="sparkles"
+                         SousTitre="Mobilisées sur l'exercice" CouleurFond="#F3E8FF" CouleurIcone="#7E22CE" />
+            <AppStatCard Label="Non positionné" Valeur="@Formats.Montant(i.NonPositionne)" Icone="exclamation"
+                         SousTitre="@($"Dont reports {Formats.Montant(i.ReportsNonPositionnes)}")" CouleurFond="#FEE2E2" CouleurIcone="#B91C1C" />
+        </div>
+
+        <AppCard ClasseSup="mb-4" Titre="Encaissements mensuels" SousTitre="Encaissé de chaque mois, face au même mois de N-1 et au cumul attendu par l'échéancier.">
+            <MudSimpleTable Dense="true">
+                <thead><tr><th>Mois</th><th class="text-right">Encaissé</th><th class="text-right">N-1</th><th class="text-right">Variation</th><th class="text-right">Cumul encaissé</th><th class="text-right">Cumul attendu (échéancier)</th></tr></thead>
+                <tbody>
+                    @{ decimal cumul = 0; }
+                    @foreach (var m in _mois)
+                    {
+                        cumul += m.Encaisse;
+                        <tr>
+                            <td class="capitalize">@m.Debut.ToString("MMMM yyyy", Formats.Francais)</td>
+                            <td class="tabular-nums text-right">@Formats.Montant(m.Encaisse)</td>
+                            <td class="tabular-nums text-right text-gray-500">@Formats.Montant(m.EncaisseN1)</td>
+                            <td class="tabular-nums text-right">@Formats.Taux(CalculsRecettes.TauxAccroissement(m.Encaisse, m.EncaisseN1))</td>
+                            <td class="tabular-nums text-right">@Formats.Montant(cumul)</td>
+                            <td class="tabular-nums text-right @(m.PrevuCumule > cumul ? "text-amber-700" : "")">@Formats.Montant(m.PrevuCumule)</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </AppCard>
+
+        <MudTabs Elevation="0" Rounded="true" TabPanelsClass="pt-4" ActivePanelIndexChanged="ChangerOngletAsync">
+            <MudTabPanel Text="Par catégorie">
+                <AppCard PaddingCorps="false"><TableauSyntheseRecette Lignes="LignesDe(RegroupementRecette.Categorie)" LibelleColonne="Catégorie" /></AppCard>
+            </MudTabPanel>
+            <MudTabPanel Text="Par nature">
+                <AppCard PaddingCorps="false"><TableauSyntheseRecette Lignes="LignesDe(RegroupementRecette.Nature)" LibelleColonne="Nature" AvecProgramme="true" /></AppCard>
+            </MudTabPanel>
+            <MudTabPanel Text="Par site">
+                <AppCard PaddingCorps="false"><TableauSyntheseRecette Lignes="LignesDe(RegroupementRecette.Site)" LibelleColonne="Site" /></AppCard>
+            </MudTabPanel>
+            <MudTabPanel Text="Par collecteur">
+                <AppCard PaddingCorps="false"><TableauSyntheseRecette Lignes="LignesDe(RegroupementRecette.Collecteur)" LibelleColonne="Organisme collecteur" /></AppCard>
+            </MudTabPanel>
+            <MudTabPanel Text="Sites sur trois exercices">
+                <AppCard PaddingCorps="false" Titre="Recettes par site sur trois exercices" SousTitre="Encaissements, ou historique repris pour les années sans saisie. « — » : aucune donnée.">
+                    @if (_sites.Count == 0)
+                    {
+                        <EtatVide Icone="office-building" Titre="Aucune recette suivie par site" />
+                    }
+                    else
+                    {
+                        <MudSimpleTable Dense="true" Hover="true">
+                            <thead>
+                                <tr>
+                                    <th>Site</th><th class="text-right">@(_exercice!.Annee - 2)</th><th class="text-right">@(_exercice.Annee - 1)</th>
+                                    <th class="text-right">@_exercice.Annee</th><th class="text-right">Variation / N-1</th><th class="text-right">Prévu @_exercice.Annee</th><th style="min-width:170px">Recouvrement</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var s in _sites)
+                                {
+                                    <tr>
+                                        <td>@s.Site</td>
+                                        <td class="tabular-nums text-right text-gray-500">@Formats.Montant(s.AnneeN2)</td>
+                                        <td class="tabular-nums text-right text-gray-500">@Formats.Montant(s.AnneeN1)</td>
+                                        <td class="tabular-nums text-right font-medium">@Formats.Montant(s.AnneeN)</td>
+                                        <td class="tabular-nums text-right">@Formats.Taux(s.Variation)</td>
+                                        <td class="tabular-nums text-right">@Formats.Montant(s.PrevuN)</td>
+                                        <td><Barre Taux="s.TauxRecouvrement" /></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                </AppCard>
+            </MudTabPanel>
+        </MudTabs>
+    }
+</AutoriseSi>
+
+@code {
+    private static readonly RegroupementRecette[] Onglets =
+        [RegroupementRecette.Categorie, RegroupementRecette.Nature, RegroupementRecette.Site, RegroupementRecette.Collecteur];
+
+    private LigneExercice? _exercice;
+    private IndicateursRecettes? _indicateurs;
+    private List<LigneMoisRecette> _mois = new();
+    private List<ComparaisonSiteRecette> _sites = new();
+    private readonly Dictionary<RegroupementRecette, List<LigneSyntheseRecette>> _regroupements = new();
+    private int _onglet;
+
+    private List<LigneSyntheseRecette> LignesDe(RegroupementRecette r) => _regroupements.GetValueOrDefault(r) ?? new();
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        _regroupements.Clear();
+        _sites = new();
+        _indicateurs = null;
+        if (e is null) return;
+        _indicateurs = await Synthese.IndicateursAsync(e.Id);
+        _mois = await Synthese.MensuelAsync(e.Id);
+        await ChargerOngletAsync();
+    }
+
+    private async Task ChangerOngletAsync(int index)
+    {
+        _onglet = index;
+        await ChargerOngletAsync();
+    }
+
+    /// <summary>Chaque onglet n'est calculé qu'à son ouverture.</summary>
+    private async Task ChargerOngletAsync()
+    {
+        if (_exercice is null) return;
+        if (_onglet < Onglets.Length)
+        {
+            if (!_regroupements.ContainsKey(Onglets[_onglet]))
+                _regroupements[Onglets[_onglet]] = await Synthese.RegrouperAsync(_exercice.Id, Onglets[_onglet]);
+        }
+        else if (_sites.Count == 0)
+            _sites = await Synthese.ComparaisonSitesAsync(_exercice.Id);
+    }
+}

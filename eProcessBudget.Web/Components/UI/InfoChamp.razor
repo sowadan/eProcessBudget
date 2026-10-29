@@ -1,0 +1,37 @@
+@*
+    Couple libellé / valeur pour les fiches de détail en lecture seule.
+    Affiche un tiret cadratin quand la valeur est vide, plutôt qu'un blanc ambigu.
+
+    EXEMPLE
+    -------
+    <InfoChamp Label="Matricule" Valeur="@u.Matricule" />
+
+    <InfoChamp Label="Statut">
+        <AppBadge Variante="success">Actif</AppBadge>
+    </InfoChamp>
+*@
+
+<div>
+    <p class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-0.5">@Label</p>
+
+    @if (ChildContent is not null)
+    {
+        @ChildContent
+    }
+    else
+    {
+        <p class="text-sm font-medium text-gray-800">
+            @(string.IsNullOrWhiteSpace(Valeur) ? "—" : Valeur)
+        </p>
+    }
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string? Valeur { get; set; }
+
+    /// <summary>Contenu riche à la place du texte simple (badge, lien, liste...).</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}
+
+

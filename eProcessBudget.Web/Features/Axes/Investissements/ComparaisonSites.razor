@@ -1,0 +1,79 @@
+@page "/axes/investissements/sites"
+@inject ISyntheseAxeService Synthese
+@inject IImmobilisationService Immobilisations
+
+<PageTitle>Comparaison inter-sites — Axes de dépenses</PageTitle>
+
+@*
+    Comparaison inter-sites des taux de réalisation de l'axe Investissements (cahier
+    fonctionnel § 3.6.2) : pour chaque site, dotation, engagé, payé, taux d'engagement et
+    de consommation (réalisation = paiements, C.2.2), et valeur de l'inventaire.
+*@
+
+<AutoriseSi DroitsRequis="Axe.Lecture">
+    <PageHeader Titre="Comparaison inter-sites" Description="Taux de réalisation des investissements par site.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><a href="@RoutesAxes.Investissements" class="hover:underline">Investissements</a>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+            <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+            <p class="text-xs text-gray-500">Les sites sont classés du taux de consommation le plus élevé au plus faible ; « n.s. » : dotation nulle.</p>
+        </div>
+    </AppCard>
+
+    <AppCard PaddingCorps="false">
+        @if (_sites.Count == 0)
+        {
+            <EtatVide Icone="scale" Titre="Aucune dotation d'investissement sur l'exercice" />
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead>
+                    <tr>
+                        <th>Site</th><th class="text-right">Dotation totale</th><th class="text-right">Engagé</th><th class="text-right">Payé</th>
+                        <th style="min-width:180px">Taux d'engagement</th><th style="min-width:180px">Taux de consommation</th><th class="text-right">Inventaire</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in _sites)
+                    {
+                        <tr>
+                            <td class="@(s.Id is null ? "italic text-gray-500" : "")">@s.Libelle</td>
+                            <td class="tabular-nums text-right">@Formats.Montant(s.Montants.DotationTotale)</td>
+                            <td class="tabular-nums text-right">@Formats.Montant(s.Montants.AETotal)</td>
+                            <td class="tabular-nums text-right">@Formats.Montant(s.Montants.PaiementsTotal)</td>
+                            <td><Barre Taux="s.Montants.TauxEngagementYCReports" /></td>
+                            <td><Barre Taux="s.Montants.TauxConsommationYCReports" /></td>
+                            <td class="tabular-nums text-right">@(s.Id is { } id && _inventaire.TryGetValue(id, out var v) ? Formats.Montant(v) : "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    private static readonly AxeDepense Axe = AxesDepense.Investissement;
+
+    private LigneExercice? _exercice;
+    private List<LigneRegroupement> _sites = new();
+    private Dictionary<Ulid, decimal> _inventaire = new();
+
+    protected override async Task OnInitializedAsync()
+        => _inventaire = (await Immobilisations.ParSiteAsync()).ToDictionary(s => s.SiteId, s => s.Valeur);
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        if (e is null) return;
+        _sites = (await Synthese.RegrouperAsync(Axe, e.Id, Regroupement.Site))
+            .OrderBy(s => s.Id is null)
+            .ThenByDescending(s => s.Montants.TauxConsommationYCReports ?? -1)
+            .ToList();
+    }
+}

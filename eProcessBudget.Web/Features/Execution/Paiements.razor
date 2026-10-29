@@ -1,0 +1,110 @@
+@page "/execution/paiements"
+@inject IPaiementService Service
+@inject IDotationService ServiceDotation
+@inject IReferentielService<Tiers> ServiceTiers
+
+<PageTitle>Paiements — Exécution budgétaire</PageTitle>
+
+@*
+    Historique des paiements de l'exercice (§ 3.4.2) : par ligne, par projet ou par
+    entité, sur une période. Les paiements se saisissent depuis la fiche de l'engagement.
+*@
+
+<AutoriseSi DroitsRequis="AccesExecution.Lecture">
+    <PageHeader Titre="Paiements" Description="Historique des paiements par ligne, projet ou entité.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><a href="/execution" class="hover:underline">Exécution budgétaire</a>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+            <ChoixReference Label="Ligne" Elements="_lignesBudgetaires" Value="_filtre.LigneBudgetaireId" ValueChanged="v => FiltrerAsync(() => _filtre.LigneBudgetaireId = v)" />
+            <ChoixReference Label="Projet" Elements="_projets" Value="_filtre.ProjetId" ValueChanged="v => FiltrerAsync(() => _filtre.ProjetId = v)" />
+            <ChoixReference Label="Bénéficiaire ou entité" Elements="_tiers" Value="_filtre.TiersId" ValueChanged="v => FiltrerAsync(() => _filtre.TiersId = v)" />
+            <MudDatePicker Date="@(_filtre.Du?.ToDateTime(TimeOnly.MinValue))" DateChanged="d => FiltrerAsync(() => _filtre.Du = d is { } v ? DateOnly.FromDateTime(v) : null)"
+                           Label="Du" DateFormat="dd/MM/yyyy" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudDatePicker Date="@(_filtre.Au?.ToDateTime(TimeOnly.MinValue))" DateChanged="d => FiltrerAsync(() => _filtre.Au = d is { } v ? DateOnly.FromDateTime(v) : null)"
+                           Label="Au" DateFormat="dd/MM/yyyy" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField T="string" @bind-Value="_filtre.Recherche" @bind-Value:after="() => ChargerAsync(1)" Placeholder="Pièce, engagement, objet…"
+                          DebounceInterval="300" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" />
+            <MudCheckBox T="bool" Value="_filtre.InclureAnnules" ValueChanged="v => FiltrerAsync(() => _filtre.InclureAnnules = v)" Label="Inclure les paiements annulés" Dense="true" />
+        </div>
+    </AppCard>
+
+    <AppCard PaddingCorps="false">
+        <ChildContent>
+            @if (_lignes.Count == 0)
+            {
+                <EtatVide Icone="check-circle" Titre="Aucun paiement" Message="Les paiements se saisissent depuis la fiche d'un engagement validé." />
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Hover="true">
+                    <thead><tr><th>Pièce</th><th>Date</th><th>Engagement</th><th>Ligne</th><th>Bénéficiaire</th><th>Mode</th><th class="text-right">Montant</th><th>Statut</th></tr></thead>
+                    <tbody>
+                        @foreach (var p in _lignes)
+                        {
+                            <tr class="@(p.Statut == StatutSaisie.Annule ? "text-gray-400" : "")">
+                                <td class="font-mono text-xs">@p.NumeroPiece</td>
+                                <td class="whitespace-nowrap">@p.Date.ToString("dd/MM/yyyy")</td>
+                                <td><a href="@DetailEngagement.Lien(p.EngagementId)" class="font-mono text-xs hover:underline">@p.Engagement</a>
+                                    <div class="text-xs text-gray-500">@p.Objet</div></td>
+                                <td class="font-mono text-xs">@p.LigneCode</td>
+                                <td class="text-xs">@p.Beneficiaire</td>
+                                <td>@LibellesExecution.ModePaiement[p.Mode]</td>
+                                <td class="tabular-nums text-right">@Formats.Montant(p.Montant)</td>
+                                <td><BadgeStatut Statut="p.Statut" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </ChildContent>
+        <PiedContent>
+            <div class="flex items-center justify-between">
+                <p class="text-xs text-gray-500">@_total paiement(s) · total payé : <span class="font-semibold tabular-nums">@Formats.Montant(_montant)</span></p>
+                @if (_total > Taille)
+                {
+                    <MudPagination Count="@((int)Math.Ceiling(_total / (double)Taille))" Selected="_page" SelectedChanged="ChargerAsync" Size="Size.Small" Color="Color.Primary" />
+                }
+            </div>
+        </PiedContent>
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    private const int Taille = 20;
+
+    private LigneExercice? _exercice;
+    private readonly FiltrePaiements _filtre = new();
+    private List<ElementListe> _lignesBudgetaires = new(), _projets = new(), _tiers = new();
+    private List<LignePaiement> _lignes = new();
+    private int _total, _page = 1;
+    private decimal _montant;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _lignesBudgetaires = await ServiceDotation.ListerLignesAsync();
+        _projets = await ServiceDotation.ListerProjetsAsync();
+        _tiers = await ServiceTiers.ListerPourSelectionAsync();
+    }
+
+    private async Task ChangerExerciceAsync(LigneExercice? e) { _exercice = e; await ChargerAsync(1); }
+
+    private async Task FiltrerAsync(Action changer)
+    {
+        changer();
+        await ChargerAsync(1);
+    }
+
+    private async Task ChargerAsync(int page)
+    {
+        _page = page;
+        if (_exercice is null) return;
+        _filtre.ExerciceId = _exercice.Id;
+        (_lignes, _total, _montant) = await Service.ListerAsync(_filtre, page, Taille);
+    }
+}

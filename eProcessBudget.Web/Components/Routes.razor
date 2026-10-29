@@ -1,0 +1,53 @@
+@using eProcessBudget.Infrastructure.Options
+@using Microsoft.Extensions.Options
+@inject IOptions<ApplicationOptions> AppOptions
+@inject IContexteConnexion ContexteConnexion
+
+@*
+    Routeur de l'application.
+
+    Deux niveaux de protection :
+      - la session : toute page exige un utilisateur connecté (politique par défaut et
+        [Authorize] de Features/_Imports.razor), sauf les pages [AllowAnonymous] du compte.
+        Si la session prend fin pendant la vie du circuit, RedirectionConnexion renvoie
+        vers la page de connexion ;
+      - les droits : chaque page se protège avec <AutoriseSi>, chaque service revérifie.
+*@
+
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)">
+            <NotAuthorized>
+                <RedirectionConnexion />
+            </NotAuthorized>
+            <Authorizing>
+                <div class="flex justify-center py-16">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                </div>
+            </Authorizing>
+        </AuthorizeRouteView>
+        @* Place le focus sur le titre après navigation : indispensable au lecteur d'écran. *@
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <PageTitle>Page introuvable — @AppOptions.Value.Nom</PageTitle>
+        <LayoutView Layout="typeof(MainLayout)">
+            <div class="flex flex-col items-center justify-center min-h-96 text-center">
+                <div class="text-6xl font-bold mb-4" style="color: var(--app-primaire);">404</div>
+                <h1 class="text-xl font-semibold text-gray-800 mb-2">Page introuvable</h1>
+                <p class="text-gray-500 mb-6">La page que vous cherchez n'existe pas ou a été déplacée.</p>
+                <a href="/" class="px-6 py-2.5 rounded-lg text-white font-medium hover:opacity-90 transition-opacity"
+                   style="background-color: var(--app-secondaire);">
+                    Retour à l'accueil
+                </a>
+            </div>
+        </LayoutView>
+    </NotFound>
+</Router>
+
+@code {
+    /// <summary>Adresse IP du client, relevée par App.razor à l'ouverture du circuit (journal d'audit).</summary>
+    [Parameter] public string? AdresseIp { get; set; }
+
+    protected override void OnInitialized() => ContexteConnexion.Definir(AdresseIp);
+}

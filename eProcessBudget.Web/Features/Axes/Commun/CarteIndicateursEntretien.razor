@@ -1,0 +1,41 @@
+@*
+    Indicateurs de l'entretien routier (réponse du métier C.2.1), entretien et réhabilitation :
+    conformité = AD / prévisions affectées ; couverture des besoins = financement / besoins
+    évalués ; exécution physique = crédits de paiement / AD.
+
+    <CarteIndicateursEntretien Indicateurs="_indicateurs" />
+*@
+
+@if (Indicateurs is { } i)
+{
+    <AppCard ClasseSup="mb-4" Titre="Indicateurs de l'entretien routier" SousTitre="Entretien routier et projets de réhabilitation (investissement).">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <div>
+                <p class="font-medium text-gray-800">Taux de conformité</p>
+                <p class="text-xs text-gray-500 mb-2">AD / prévisions affectées</p>
+                <Jauge Libelle="@($"{Formats.Montant(i.Financement.AETotal)} / {Formats.Montant(i.PrevisionsAffectees)}")" Taux="i.TauxConformite" />
+            </div>
+            <div>
+                <p class="font-medium text-gray-800">Couverture des besoins</p>
+                <p class="text-xs text-gray-500 mb-2">Financement de l'entretien / besoins évalués</p>
+                @if (i.BesoinsEvalues == 0)
+                {
+                    <p class="text-sm text-gray-500">n.s. — besoins de l'exercice non saisis.</p>
+                }
+                else
+                {
+                    <Jauge Libelle="@($"{Formats.Montant(i.PrevisionsAffectees)} / {Formats.Montant(i.BesoinsEvalues)}")" Taux="i.TauxCouverture" />
+                }
+            </div>
+            <div>
+                <p class="font-medium text-gray-800">Exécution physique</p>
+                <p class="text-xs text-gray-500 mb-2">Crédits de paiement / AD</p>
+                <Jauge Libelle="@($"{Formats.Montant(i.Financement.PaiementsTotal)} / {Formats.Montant(i.Financement.AETotal)}")" Taux="i.TauxExecutionPhysique" />
+            </div>
+        </div>
+    </AppCard>
+}
+
+@code {
+    [Parameter] public IndicateursEntretien? Indicateurs { get; set; }
+}

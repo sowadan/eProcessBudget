@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- TargetFramework, Nullable, ImplicitUsings : voir Directory.Build.props -->
+  <PropertyGroup>
+    <RootNamespace>eProcessBudget.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Identifiants ULID : uniques, triables par date de création, 26 caractères. -->
+    <PackageReference Include="Ulid" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,73 @@
+@inject IEngagementService Service
+
+@* Échéancier des crédits de paiement d'un engagement pluriannuel : un CP par année, total au plus égal au montant engagé. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <MudSimpleTable Dense="true">
+            <thead><tr><th>Année</th><th>Crédit de paiement</th></tr></thead>
+            <tbody>
+                @foreach (var a in _annees)
+                {
+                    <tr>
+                        <td>@a</td>
+                        <td><MudNumericField T="decimal" Value="_cp[a]" ValueChanged="v => _cp[a] = v" Min="0" Format="N2" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                    </tr>
+                }
+                <tr class="font-semibold">
+                    <td>Total</td>
+                    <td class="tabular-nums @(Total > Montant ? "text-red-700" : "")">@Formats.Montant(Total) sur @Formats.Montant(Montant)</td>
+                </tr>
+            </tbody>
+        </MudSimpleTable>
+        <div class="flex justify-between items-center mt-2">
+            <p class="text-xs text-gray-500">Une année à 0 n'est pas enregistrée.</p>
+            <AppButton Variante="ghost" Taille="sm" Icone="plus" OnClick="AjouterAnnee" Desactive="@(_annees.Count >= 11)">Année</AppButton>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" Desactive="@(Total > Montant)" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Ulid EngagementId { get; set; }
+    [Parameter] public int Annee { get; set; }
+    [Parameter] public decimal Montant { get; set; }
+    [Parameter] public IReadOnlyDictionary<int, decimal> Existant { get; set; } = new Dictionary<int, decimal>();
+
+    private readonly Dictionary<int, decimal> _cp = new();
+    private List<int> _annees = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    private decimal Total => _cp.Values.Sum();
+
+    protected override void OnInitialized()
+    {
+        var derniere = Math.Max(Annee + 2, Existant.Keys.DefaultIfEmpty(Annee).Max());
+        _annees = Enumerable.Range(Annee, derniere - Annee + 1).ToList();
+        foreach (var a in _annees) _cp[a] = Existant.GetValueOrDefault(a);
+    }
+
+    private void AjouterAnnee()
+    {
+        var a = _annees.Max() + 1;
+        _annees.Add(a);
+        _cp[a] = 0;
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.DefinirEcheancierAsync(EngagementId, _cp.Where(x => x.Value > 0).ToDictionary(x => x.Key, x => x.Value));
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

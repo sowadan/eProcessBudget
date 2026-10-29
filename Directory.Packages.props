@@ -1,0 +1,40 @@
+<Project>
+  <!--
+    Gestion centralisée des versions NuGet : les .csproj déclarent les packages SANS version,
+    la version est fixée ici, une seule fois pour toute la solution.
+
+    Règle de mise à jour : les packages Microsoft (EF Core) suivent le patch du runtime
+    .NET 10 LTS ; MudBlazor reste sur la majeure 9.x, la première qui cible net10.0.
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Accès aux données -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12" />
+
+    <!-- Interface -->
+    <PackageVersion Include="MudBlazor" Version="9.11.0" />
+
+    <!-- Identifiants -->
+    <PackageVersion Include="Ulid" Version="1.4.1" />
+
+    <!-- Sécurité : hachage des mots de passe (cahier technique § 2.1 et § 2.6) -->
+    <PackageVersion Include="BCrypt.Net-Next" Version="4.2.0" />
+
+    <!-- Import / export Excel des référentiels (MIT) -->
+    <PackageVersion Include="ClosedXML" Version="0.105.0" />
+
+    <!-- Export PDF des rapports (cahier technique § 2.1 et 2.10). Licence Community gratuite
+         sous un seuil de chiffre d'affaires : à vérifier (option Rapports:LicenceQuestPdf). -->
+    <PackageVersion Include="QuestPDF" Version="2026.7.0" />
+
+    <!-- Tests (xUnit v3 ; base EF Core en mémoire pour les tests de services) -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.12" />
+  </ItemGroup>
+</Project>

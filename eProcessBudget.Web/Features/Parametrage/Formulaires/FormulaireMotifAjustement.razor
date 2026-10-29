@@ -1,0 +1,11 @@
+@inherits FormulaireBase<MotifAjustement>
+
+@* Formulaire de saisie : MotifAjustement. Généré à l'identique pour tous les référentiels ; les règles sont dans CatalogueReferentiels. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <MudTextField @bind-Value="Element.Code" Label="Code" MaxLength="20" Required="true" RequiredError="Code : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <ChoixEnum TEnum="SensAjustement" Label="Sens" Libelles="LibellesParametrage.SensAjustement" @bind-Value="Element.Sens" />
+    <MudTextField @bind-Value="Element.Libelle" Label="Libellé" MaxLength="200" Required="true" RequiredError="Libellé : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+</div>

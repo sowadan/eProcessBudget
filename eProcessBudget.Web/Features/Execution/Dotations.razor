@@ -1,0 +1,184 @@
+@page "/execution"
+@inject ISituationService Situations
+@inject IDotationService Service
+@inject IReferentielService<Axe> ServiceAxe
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Dotations — Exécution budgétaire</PageTitle>
+
+@*
+    Dotations d'un exercice et leur situation (cahier fonctionnel § 3.4) : prévision
+    initiale, ajustements, reports, engagements, paiements, taux. La prévision initiale se
+    saisit tant que l'exercice est en préparation ; elle est figée à l'ouverture.
+*@
+
+<AutoriseSi DroitsRequis="AccesExecution.Lecture">
+    <PageHeader Titre="Dotations" Description="Prévisions de dépense de l'exercice et leur exécution.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><span>Exécution budgétaire</span>
+        </BreadcrumbContent>
+        <ActionsContent>
+            @if (_droits.Contains(TypeDroit.DotationSaisir) && _exercice is { Statut: not StatutExercice.Cloture })
+            {
+                <AppButton Icone="plus" OnClick="() => EditerAsync(null)">Nouvelle dotation</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <div class="flex flex-col lg:flex-row gap-3">
+            <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+            <ChoixReference Label="Axe" Elements="_axes" Value="_filtre.AxeId" ValueChanged="ChangerAxeAsync" />
+            <MudTextField T="string" @bind-Value="_filtre.Recherche" @bind-Value:after="() => ChargerAsync(1)" Placeholder="Code ou libellé de ligne…"
+                          DebounceInterval="300" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" />
+        </div>
+        @if (_exercice?.Statut == StatutExercice.EnPreparation)
+        {
+            <p class="text-xs text-gray-500 mt-3">Exercice en préparation : la prévision initiale se saisit librement. Elle sera figée à l'ouverture de l'exercice.</p>
+        }
+    </AppCard>
+
+    @if (_exercice is not null)
+    {
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            <AppStatCard Label="Dotation totale" Valeur="@Formats.Montant(_totaux.DotationTotale)" Icone="collection"
+                         SousTitre="@($"Prévision ajustée {Formats.Montant(_totaux.PrevisionAjustee)}")" />
+            <AppStatCard Label="Engagé" Valeur="@Formats.Montant(_totaux.AETotal)" Icone="clipboard-list"
+                         SousTitre="@($"{Formats.Taux(_totaux.TauxEngagementYCReports)} y compris reports")" CouleurFond="#FEF3C7" CouleurIcone="#B45309" />
+            <AppStatCard Label="Payé" Valeur="@Formats.Montant(_totaux.PaiementsTotal)" Icone="check-circle"
+                         SousTitre="@($"{Formats.Taux(_totaux.TauxConsommationYCReports)} y compris reports")" CouleurFond="#DCFCE7" CouleurIcone="#15803D" />
+            <AppStatCard Label="Reste à payer" Valeur="@Formats.Montant(_totaux.ResteAPayerYCReports)" Icone="clock"
+                         SousTitre="y compris reports" CouleurFond="#F3E8FF" CouleurIcone="#7E22CE" />
+        </div>
+
+        <AppCard PaddingCorps="false">
+            <ChildContent>
+            @if (_lignes.Count == 0)
+            {
+                <EtatVide Icone="collection" Titre="Aucune dotation" Message="Saisissez les prévisions initiales de l'exercice." />
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Hover="true">
+                    <thead>
+                        <tr>
+                            <th>Ligne</th><th>Imputation</th><th>Statut</th>
+                            <th class="text-right">Dotation totale</th><th class="text-right">Engagé</th>
+                            <th class="text-right">Payé</th><th class="text-right">Taux d'engagement</th><th class="text-right">Disponible</th><th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var d in _lignes)
+                        {
+                            <tr class="cursor-pointer" @onclick="() => Nav.NavigateTo(DetailDotation.Lien(d.Id))">
+                                <td><span class="font-mono text-xs font-semibold">@d.LigneCode</span> — @d.LigneLibelle</td>
+                                <td class="text-xs text-gray-500">@d.Imputation</td>
+                                <td><BadgeStatut Statut="d.Statut" /></td>
+                                <td class="tabular-nums text-right">@Formats.Montant(d.Montants.DotationTotale)</td>
+                                <td class="tabular-nums text-right">@Formats.Montant(d.Montants.AETotal)</td>
+                                <td class="tabular-nums text-right">@Formats.Montant(d.Montants.PaiementsTotal)</td>
+                                <td class="tabular-nums text-right">@Formats.Taux(d.Montants.TauxEngagementYCReports)</td>
+                                <td class="tabular-nums text-right @(d.Montants.Disponible < 0 ? "text-red-700 font-semibold" : "")">@Formats.Montant(d.Montants.Disponible)</td>
+                                <td class="text-right whitespace-nowrap" @onclick:stopPropagation="true">
+                                    @if (_droits.Contains(TypeDroit.DotationSaisir) && d.Statut == StatutSaisie.Brouillon)
+                                    {
+                                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditerAsync(d)" />
+                                    }
+                                    @if (_droits.Contains(TypeDroit.DotationSaisir) && _exercice.Statut != StatutExercice.Cloture
+                                         && (d.Statut == StatutSaisie.Brouillon || d.Montants.MontantInitial == 0))
+                                    {
+                                        <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerAsync(d)" />
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+            </ChildContent>
+            <PiedContent>
+                <div class="flex items-center justify-between">
+                    <p class="text-xs text-gray-500">@_total dotation(s)</p>
+                    @if (_total > Taille)
+                    {
+                        <MudPagination Count="@((int)Math.Ceiling(_total / (double)Taille))" Selected="_page" SelectedChanged="ChargerAsync" Size="Size.Small" Color="Color.Primary" />
+                    }
+                </div>
+            </PiedContent>
+        </AppCard>
+    }
+</AutoriseSi>
+
+@code {
+    private const int Taille = 20;
+
+    private IReadOnlySet<TypeDroit> _droits = new HashSet<TypeDroit>();
+    private LigneExercice? _exercice;
+    private readonly FiltreDotations _filtre = new();
+    private List<ElementListe> _axes = new();
+    private List<LigneDotation> _lignes = new();
+    private MontantsDotation _totaux = MontantsDotation.Zero;
+    private int _total, _page = 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _droits = await Droits.ObtenirDroitsAsync(await UserContext.ObtenirUserIdAsync());
+        _axes = await ServiceAxe.ListerPourSelectionAsync(a => a.TypeAxe == TypeAxe.Depense);
+    }
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        await ChargerAsync(1);
+    }
+
+    private async Task ChangerAxeAsync(Ulid? axeId)
+    {
+        _filtre.AxeId = axeId;
+        await ChargerAsync(1);
+    }
+
+    private async Task ChargerAsync(int page)
+    {
+        _page = page;
+        if (_exercice is null) return;
+        _filtre.ExerciceId = _exercice.Id;
+        (_lignes, _total) = await Situations.ListerAsync(_filtre, page, Taille);
+        _totaux = await Situations.TotauxAsync(_filtre);
+    }
+
+    private async Task EditerAsync(LigneDotation? d)
+    {
+        var saisie = d is null ? new SaisieDotation { ExerciceId = _exercice!.Id } : await Service.ObtenirSaisieAsync(d.Id);
+        if (saisie is null) return;
+        var parametres = new DialogParameters<DialogDotation>
+        {
+            { x => x.Saisie, saisie }, { x => x.EnPreparation, _exercice!.Statut == StatutExercice.EnPreparation }
+        };
+        var dialog = await DialogService.ShowAsync<DialogDotation>(d is null ? "Nouvelle dotation" : "Modifier la dotation", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Dotation enregistrée.", Severity.Success);
+            await ChargerAsync(_page);
+        }
+    }
+
+    private async Task SupprimerAsync(LigneDotation d)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, "Supprimer la dotation" }, { x => x.Message, $"La dotation de la ligne {d.LigneCode} est supprimée (suppression logique)." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+        var (ok, erreur) = await Service.SupprimerAsync(d.Id);
+        Snackbar.Add(ok ? "Dotation supprimée." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync(_page);
+    }
+}

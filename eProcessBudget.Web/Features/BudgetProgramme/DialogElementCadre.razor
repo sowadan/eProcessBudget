@@ -1,0 +1,79 @@
+@inject ICadreLogiqueService CadreService
+@inject IReferentielService<Indicateur> ServiceIndicateur
+@inject IReferentielService<ActionProgramme> ServiceAction
+@inject IReferentielService<ListeValeur> ServiceListe
+
+@* Élément du cadre logique : libellé, action (objectif spécifique), indicateur, source de vérification, valeur cible (résultat immédiat). *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="space-y-4">
+            @if (Saisie.Type == TypeElementCL.ObjectifSpecifique)
+            {
+                <ChoixReference Label="Action" Elements="_actions" Obligatoire="true" Disabled="@(Saisie.Id != Ulid.Empty)"
+                                Value="Saisie.ActionId" ValueChanged="ChangerActionAsync" />
+            }
+            <MudTextField @bind-Value="Saisie.Libelle" Label="Libellé" Lines="2" MaxLength="500" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <ChoixReference Label="Indicateur" Elements="_indicateurs"
+                            HelperText="@(Saisie.Type == TypeElementCL.ObjectifGeneral ? "Indicateurs du programme." : "Indicateurs de l'action.")"
+                            Value="Saisie.IndicateurId" ValueChanged="v => Saisie.IndicateurId = v" />
+            <ChoixReference Label="Source de vérification" Elements="_sources" Value="Saisie.SourceVerificationId" ValueChanged="v => Saisie.SourceVerificationId = v" />
+            @if (Saisie.Type == TypeElementCL.ResultatImmediat)
+            {
+                <MudNumericField T="decimal?" @bind-Value="Saisie.ValeurCible" Label="Valeur cible" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            }
+            <MudNumericField T="int" @bind-Value="Saisie.Ordre" Label="Ordre d'affichage" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public SaisieElementCadre Saisie { get; set; } = new();
+
+    private List<ElementListe> _actions = new();
+    private List<ElementListe> _indicateurs = new();
+    private List<ElementListe> _sources = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var programmeId = Saisie.ProgrammeId;
+        _actions = await ServiceAction.ListerPourSelectionAsync(a => a.ProgrammeId == programmeId);
+        _sources = await ServiceListe.ListerPourSelectionAsync(l => l.Categorie == CategoriesListeValeur.SourceVerification);
+        await ChargerIndicateursAsync();
+    }
+
+    private async Task ChangerActionAsync(Ulid? actionId)
+    {
+        Saisie.ActionId = actionId;
+        Saisie.IndicateurId = null;
+        await ChargerIndicateursAsync();
+    }
+
+    private async Task ChargerIndicateursAsync()
+    {
+        var programmeId = Saisie.ProgrammeId;
+        var actionId = Saisie.ActionId;
+        _indicateurs = Saisie.Type == TypeElementCL.ObjectifGeneral
+            ? await ServiceIndicateur.ListerPourSelectionAsync(i => i.ProgrammeId == programmeId)
+            : actionId is null ? new() : await ServiceIndicateur.ListerPourSelectionAsync(i => i.ActionId == actionId);
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await CadreService.EnregistrerAsync(Saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

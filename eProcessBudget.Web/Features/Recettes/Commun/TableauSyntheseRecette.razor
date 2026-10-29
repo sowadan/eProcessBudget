@@ -1,0 +1,60 @@
+@*
+    Recettes regroupées (par catégorie, nature, site, collecteur) : prévision initiale et
+    retenue, encaissé, part non positionnée, reste à recouvrer, taux de recouvrement et part
+    dans les recettes. Avec AvecProgramme, la ressource programmée du cycle (par nature).
+
+    <TableauSyntheseRecette Lignes="_lignes" LibelleColonne="Site" />
+*@
+
+@if (Lignes.Count == 0)
+{
+    <EtatVide Icone="cash" Titre="Aucune prévision de recette" Message="Saisissez les prévisions de l'exercice." />
+}
+else
+{
+    var total = MontantsRecette.Somme(Lignes.Select(l => l.Montants));
+    <MudSimpleTable Dense="true" Hover="true">
+        <thead>
+            <tr>
+                <th>@LibelleColonne</th>
+                @if (AvecProgramme) { <th class="text-right">Programmé (cycle)</th> }
+                <th class="text-right">Prévision initiale</th><th class="text-right">Prévision retenue</th><th class="text-right">Encaissé</th>
+                <th class="text-right">Non positionné</th><th class="text-right">Reste à recouvrer</th>
+                <th style="min-width:170px">Taux de recouvrement</th><th class="text-right">Part</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var l in Lignes)
+            {
+                <tr>
+                    <td class="@(l.Id is null && LibelleColonne != "Catégorie" ? "italic text-gray-500" : "")">@l.Libelle</td>
+                    @if (AvecProgramme) { <td class="tabular-nums text-right text-gray-600">@Formats.Montant(l.Programme)</td> }
+                    <td class="tabular-nums text-right">@Formats.Montant(l.Montants.PrevisionInitiale)</td>
+                    <td class="tabular-nums text-right">@Formats.Montant(l.Montants.PrevisionRetenue)</td>
+                    <td class="tabular-nums text-right">@Formats.Montant(l.Montants.Encaisse)</td>
+                    <td class="tabular-nums text-right">@Formats.Montant(l.Montants.EncaisseNonPositionne)</td>
+                    <td class="tabular-nums text-right @(l.Montants.Ecart < 0 ? "text-emerald-700" : "")">@Formats.Montant(l.Montants.Ecart)</td>
+                    <td><Barre Taux="l.Montants.TauxRecouvrement" /></td>
+                    <td class="tabular-nums text-right">@Formats.Taux(CalculsExecution.Taux(l.Montants.Encaisse, total.Encaisse))</td>
+                </tr>
+            }
+            <tr class="font-semibold bg-gray-50">
+                <td>Total</td>
+                @if (AvecProgramme) { <td class="tabular-nums text-right">@Formats.Montant(Lignes.Sum(l => l.Programme ?? 0))</td> }
+                <td class="tabular-nums text-right">@Formats.Montant(total.PrevisionInitiale)</td>
+                <td class="tabular-nums text-right">@Formats.Montant(total.PrevisionRetenue)</td>
+                <td class="tabular-nums text-right">@Formats.Montant(total.Encaisse)</td>
+                <td class="tabular-nums text-right">@Formats.Montant(total.EncaisseNonPositionne)</td>
+                <td class="tabular-nums text-right">@Formats.Montant(total.Ecart)</td>
+                <td><Barre Taux="total.TauxRecouvrement" /></td>
+                <td class="tabular-nums text-right">100,00 %</td>
+            </tr>
+        </tbody>
+    </MudSimpleTable>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<LigneSyntheseRecette> Lignes { get; set; } = [];
+    [Parameter] public string LibelleColonne { get; set; } = "";
+    [Parameter] public bool AvecProgramme { get; set; }
+}

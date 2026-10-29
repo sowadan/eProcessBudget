@@ -1,0 +1,47 @@
+@inject IBesoinEntretienService Service
+@inject IReferentielService<TypeTravaux> ServiceTypeTravaux
+
+@* Besoin d'entretien évalué pour un exercice (C.2.1) : global, ou par type de travaux. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="sm:col-span-2">
+                <ChoixReference Label="Type de travaux (vide : besoin global)" Elements="_types" Value="Saisie.TypeTravauxId" ValueChanged="v => Saisie.TypeTravauxId = v" />
+            </div>
+            <MudNumericField T="decimal" @bind-Value="Saisie.Montant" Label="Montant des besoins évalués" Min="0" Format="N0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudNumericField T="decimal?" @bind-Value="Saisie.Km" Label="Kilométrage à entretenir (facultatif)" Min="0" Format="0.####" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <div class="sm:col-span-2">
+                <MudTextField @bind-Value="Saisie.Commentaire" Label="Source de l'évaluation" Lines="2" MaxLength="1000" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public SaisieBesoin Saisie { get; set; } = new();
+
+    private List<ElementListe> _types = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+        => _types = await ServiceTypeTravaux.ListerPourSelectionAsync(t => !t.EstPrestationControle);
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.EnregistrerAsync(Saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

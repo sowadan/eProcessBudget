@@ -1,0 +1,54 @@
+@*
+    Situation d'une dotation (cahier technique § 4.4) : crédits, engagements, paiements,
+    restes et taux sur les deux bases (période seule / y compris reports). Composant
+    générique, réutilisé par les quatre axes de dépenses.
+
+    <CarteSituation Montants="fiche.Dotation.Montants" />
+*@
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <AppCard Titre="Crédits">
+        <dl class="space-y-1.5 text-sm">
+            <LigneMontant Libelle="Prévision initiale" Valeur="Montants.MontantInitial" />
+            <LigneMontant Libelle="Ajustements validés" Valeur="Montants.Ajustements" Signe="true" />
+            <LigneMontant Libelle="Prévision ajustée" Valeur="Montants.PrevisionAjustee" Fort="true" />
+            <LigneMontant Libelle="Reports reçus" Valeur="Montants.Reports" Signe="true" />
+            <LigneMontant Libelle="Dotation totale" Valeur="Montants.DotationTotale" Fort="true" />
+        </dl>
+    </AppCard>
+
+    <AppCard Titre="Engagements (AE / AD)">
+        <dl class="space-y-1.5 text-sm">
+            <LigneMontant Libelle="Engagé sur l'exercice" Valeur="Montants.AEPeriode" />
+            <LigneMontant Libelle="Encours reportés" Valeur="Montants.AEReports" />
+            <LigneMontant Libelle="Total engagé" Valeur="Montants.AETotal" Fort="true" />
+            <LigneMontant Libelle="Disponible" Valeur="Montants.Disponible" Fort="true" Alerte="@(Montants.Disponible < 0)" />
+        </dl>
+    </AppCard>
+
+    <AppCard Titre="Paiements">
+        <dl class="space-y-1.5 text-sm">
+            <LigneMontant Libelle="Payé sur l'exercice" Valeur="Montants.PaiementsPeriode" />
+            <LigneMontant Libelle="Payé y compris reports" Valeur="Montants.PaiementsTotal" Fort="true" />
+            <LigneMontant Libelle="Rejets et pénalités" Valeur="Montants.RejetsPenalites" />
+            <LigneMontant Libelle="Reste à payer (exercice)" Valeur="Montants.ResteAPayerPeriode" />
+            <LigneMontant Libelle="Reste à payer y compris reports" Valeur="Montants.ResteAPayerYCReports" />
+            <LigneMontant Libelle="Encours à reporter" Valeur="Montants.EncoursAReporter" />
+            <LigneMontant Libelle="Écart budgétaire / reliquat" Valeur="Montants.Ecart" Fort="true" />
+        </dl>
+    </AppCard>
+</div>
+
+<AppCard ClasseSup="mt-4" Titre="Taux" SousTitre="Sur la période seule, puis y compris les reports. « n.s. » : dénominateur nul.">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <Jauge Libelle="Engagement — période" Taux="Montants.TauxEngagementPeriode" />
+        <Jauge Libelle="Engagement — y c. reports" Taux="Montants.TauxEngagementYCReports" />
+        <Jauge Libelle="Consommation — période" Taux="Montants.TauxConsommationPeriode" />
+        <Jauge Libelle="Consommation — y c. reports" Taux="Montants.TauxConsommationYCReports" />
+        <Jauge Libelle="Consommation des AD" Taux="Montants.TauxConsommationAD" />
+    </div>
+</AppCard>
+
+@code {
+    [Parameter, EditorRequired] public MontantsDotation Montants { get; set; } = MontantsDotation.Zero;
+}

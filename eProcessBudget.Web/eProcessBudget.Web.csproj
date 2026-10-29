@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- TargetFramework, Nullable, ImplicitUsings : voir Directory.Build.props -->
+  <PropertyGroup>
+    <RootNamespace>eProcessBudget.Web</RootNamespace>
+    <!-- Secrets du poste de développement (chaîne de connexion, Amorcage:MotDePasse...) : dotnet user-secrets.
+         Identifiant repris par Infrastructure/Data/AppDbContextDesignFactory.cs (dotnet ef) : à garder identique. -->
+    <UserSecretsId>eProcessBudget-web-c3ed7360-8a0a-405c-99a0-8ab259a66ff3</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <!-- MudBlazor : bibliothèque de composants (MIT, gratuite). 9.x = première majeure ciblant net10.0 -->
+    <PackageReference Include="MudBlazor" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\eProcessBudget.Core\eProcessBudget.Core.csproj" />
+    <ProjectReference Include="..\eProcessBudget.Infrastructure\eProcessBudget.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <!--
+    Feuille Tailwind figée (wwwroot/css/tailwind.min.css, versionnée) : régénérée avant la
+    compilation si un composant a changé, à condition que l'outillage soit installé (npm install).
+    Sans node_modules, la feuille existante est utilisée telle quelle. Voir docs/07-composants-ui.md.
+  -->
+  <ItemGroup>
+    <!-- Outillage de développement : jamais publié. -->
+    <Content Update="package.json;package-lock.json" CopyToPublishDirectory="Never" CopyToOutputDirectory="Never" />
+    <SourcesTailwind Include="Components\**\*.razor;Components\**\*.cs;Features\**\*.razor;Features\**\*.cs;Securite\**\*.cs;wwwroot\js\**\*.js;Styles\tailwind.source.css;tailwind.config.js" />
+  </ItemGroup>
+  <Target Name="GenererTailwind" BeforeTargets="BeforeBuild" Condition="Exists('node_modules\.bin\tailwindcss.cmd') Or Exists('node_modules/.bin/tailwindcss')"
+          Inputs="@(SourcesTailwind)" Outputs="wwwroot\css\tailwind.min.css">
+    <Exec Command="npm run css --silent" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <!-- Tailwind ne réécrit pas une feuille inchangée : on la date pour la compilation incrémentale. -->
+    <Touch Files="wwwroot\css\tailwind.min.css" />
+  </Target>
+</Project>

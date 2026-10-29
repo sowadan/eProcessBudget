@@ -1,0 +1,43 @@
+@inject NavigationManager Nav
+
+@* Liste d'engagements : un clic ouvre la fiche. *@
+
+<MudSimpleTable Dense="true" Hover="true">
+    <thead>
+        <tr>
+            <th>Numéro</th><th>Date</th><th>Objet</th>
+            @if (AvecLigne) { <th>Ligne</th> }
+            <th>Bénéficiaire</th><th class="text-right">Montant</th><th class="text-right">Payé</th><th class="text-right">Reste à payer</th><th>Statut</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var e in Lignes)
+        {
+            <tr class="cursor-pointer" @onclick="@(() => Nav.NavigateTo($"/execution/engagements/{e.Id}"))">
+                <td class="font-mono text-xs whitespace-nowrap">
+                    @e.Numero
+                    <span class="text-gray-400">@LibellesExecution.TypeEngagementCourt[e.Type]</span>
+                </td>
+                <td class="whitespace-nowrap">@e.Date.ToString("dd/MM/yyyy")</td>
+                <td>@e.Objet</td>
+                @if (AvecLigne) { <td class="font-mono text-xs">@e.LigneCode</td> }
+                <td class="text-xs text-gray-600">@e.Tiers</td>
+                <td class="tabular-nums text-right">@Formats.Montant(e.Montant)</td>
+                <td class="tabular-nums text-right">@Formats.Montant(e.Paye)</td>
+                <td class="tabular-nums text-right">@Formats.Montant(e.Statut == StatutSaisie.Valide ? e.ResteAPayer : null)</td>
+                <td class="whitespace-nowrap">
+                    <BadgeStatut Statut="e.Statut" />
+                    @if (e.EstReport) { <AppBadge Variante="primary" Petit="true">Encours reporté</AppBadge> }
+                    @if (e.DepassementEnAttente) { <AppBadge Variante="danger" Petit="true">Dépassement</AppBadge> }
+                </td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<LigneEngagement> Lignes { get; set; } = [];
+
+    /// <summary>Affiche la ligne budgétaire (listes tous engagements confondus).</summary>
+    [Parameter] public bool AvecLigne { get; set; }
+}

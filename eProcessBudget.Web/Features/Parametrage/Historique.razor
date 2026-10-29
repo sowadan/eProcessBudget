@@ -1,0 +1,177 @@
+@page "/parametrage/historique"
+@inject IHistoriqueService Service
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IJSRuntime JS
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Reprise de l'historique — Paramétrage</PageTitle>
+
+@*
+    Reprise de l'historique à la mise en service (réponse du métier C.2.10) : les cinq
+    exercices qui précèdent le premier exercice géré, par import Excel tout ou rien. Base des
+    états pluriannuels (exécution des trois derniers exercices, recettes par site, état de
+    présentation). Les années suivantes sont calculées à chaque clôture.
+*@
+
+<AutoriseSi DroitsRequis="new[] { TypeDroit.ParametrageLire, TypeDroit.ParametrageGerer }">
+    <PageHeader Titre="Reprise de l'historique" Description="Exécution des cinq exercices antérieurs à la mise en service.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span>
+            <a href="/parametrage" class="hover:underline">Paramétrage</a>
+        </BreadcrumbContent>
+        <ActionsContent>
+            <AppButton Variante="outline" Icone="download" EnChargement="_modele" OnClick="TelechargerModeleAsync">Modèle Excel</AppButton>
+            @if (_peutGerer)
+            {
+                <MudFileUpload T="IBrowserFile" Accept=".xlsx" FilesChanged="ImporterAsync" MaximumFileCount="1">
+                    <CustomContent>
+                        <AppButton Icone="plus" EnChargement="_import" OnClick="@(() => context.OpenFilePickerAsync())">Importer un fichier</AppButton>
+                    </CustomContent>
+                </MudFileUpload>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    <AppAlert Variante="info" Titre="Comment procéder" ClasseSup="mb-4">
+        @if (_annees is { } a)
+        {
+            <span>Années admises : <strong>@a.Debut à @a.Fin</strong> (cinq exercices avant le premier exercice géré). </span>
+        }
+        Téléchargez le modèle : une ligne par année et par imputation (axe, rubrique, nature de dépense, site) ou par nature de
+        recette (site facultatif), avec la prévision, le montant autorisé, le réalisé, le restant à payer et les kilomètres
+        entretenus. La feuille « Codes » liste les codes valides. Importer une année remplace ses lignes déjà importées ;
+        les années calculées à la clôture ne sont jamais modifiées. <strong>Si une seule ligne est en erreur, rien n'est enregistré.</strong>
+    </AppAlert>
+
+    @if (_rapport is { Ok: false })
+    {
+        <AppCard ClasseSup="mb-4" PaddingCorps="false" Titre="@($"{_rapport.Erreurs.Count} erreur(s) : rien n'a été enregistré")" SousTitre="Corrigez le fichier puis importez-le de nouveau.">
+            <div class="max-h-80 overflow-y-auto">
+                <MudSimpleTable Dense="true" Hover="true" FixedHeader="true">
+                    <thead><tr><th>Ligne</th><th>Colonne</th><th>Anomalie</th></tr></thead>
+                    <tbody>
+                        @foreach (var e in _rapport.Erreurs.Take(300))
+                        {
+                            <tr><td class="tabular-nums">@(e.Ligne == 0 ? "—" : e.Ligne.ToString())</td><td>@(e.Colonne ?? "—")</td><td>@e.Message</td></tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </div>
+        </AppCard>
+    }
+
+    <AppCard PaddingCorps="false" Titre="Historique disponible" SousTitre="Par année : origine, nombre de lignes, prévision et réalisé.">
+        @if (_synthese.Count == 0)
+        {
+            <EtatVide Icone="clock" Titre="Aucun historique" Message="Importez les exercices antérieurs à partir du modèle." />
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Année</th><th>Origine</th><th class="text-right">Lignes</th><th class="text-right">Prévision</th><th class="text-right">Réalisé</th><th class="text-right">Km entretenus</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var h in _synthese)
+                    {
+                        <tr>
+                            <td class="font-semibold">@h.Annee</td>
+                            <td>
+                                @if (h.Source == SourceHistorique.Import) { <AppBadge Variante="primary" Petit="true">Reprise (import)</AppBadge> }
+                                else { <AppBadge Variante="neutral" Petit="true">Calculé à la clôture</AppBadge> }
+                            </td>
+                            <td class="tabular-nums text-right">@h.NbLignes</td>
+                            <td class="tabular-nums text-right">@Formats.Montant(h.Prevision)</td>
+                            <td class="tabular-nums text-right">@Formats.Montant(h.Realise)</td>
+                            <td class="tabular-nums text-right">@Formats.Nombre(h.KmEntretenus)</td>
+                            <td class="text-right">
+                                @if (_peutGerer && h.Source == SourceHistorique.Import)
+                                {
+                                    <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerAsync(h.Annee)" />
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    private List<AnneeHistorique> _synthese = new();
+    private (int Debut, int Fin)? _annees;
+    private RapportImport? _rapport;
+    private bool _peutGerer, _modele, _import;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutGerer = await Droits.ADroitAsync(await UserContext.ObtenirUserIdAsync(), TypeDroit.ParametrageGerer);
+        _annees = await Service.AnneesAdmisesAsync();
+        await ChargerAsync();
+    }
+
+    private async Task ChargerAsync() => _synthese = await Service.SyntheseAsync();
+
+    private async Task TelechargerModeleAsync()
+    {
+        _modele = true;
+        try
+        {
+            var octets = await Service.ModeleAsync();
+            if (octets is null) return;
+            using var flux = new MemoryStream(octets);
+            using var reference = new DotNetStreamReference(flux);
+            await JS.InvokeVoidAsync("appTelechargerFlux", "modele-historique.xlsx", reference);
+        }
+        finally
+        {
+            _modele = false;
+        }
+    }
+
+    private async Task ImporterAsync(IBrowserFile? fichier)
+    {
+        if (fichier is null) return;
+        if (fichier.Size > ExcelReferentielLimites.TailleMaxOctets)
+        {
+            Snackbar.Add("Le fichier dépasse 5 Mo.", Severity.Error);
+            return;
+        }
+        _import = true;
+        try
+        {
+            await using var flux = fichier.OpenReadStream(ExcelReferentielLimites.TailleMaxOctets);
+            using var memoire = new MemoryStream();
+            await flux.CopyToAsync(memoire);
+            memoire.Position = 0;
+            _rapport = await Service.ImporterAsync(memoire);
+            if (_rapport.Ok)
+            {
+                Snackbar.Add($"{_rapport.NbCrees} ligne(s) importée(s), {_rapport.NbModifies} remplacée(s).", Severity.Success);
+                await ChargerAsync();
+            }
+        }
+        catch (IOException)
+        {
+            Snackbar.Add("Le fichier n'a pas pu être lu entièrement. Réessayez.", Severity.Error);
+        }
+        finally
+        {
+            _import = false;
+        }
+    }
+
+    private async Task SupprimerAsync(int annee)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, $"Supprimer l'historique {annee}" }, { x => x.Message, $"Les lignes importées de {annee} sont supprimées (suppression logique)." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+        var (ok, erreur) = await Service.SupprimerAnneeAsync(annee);
+        Snackbar.Add(ok ? "Historique supprimé." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync();
+    }
+}

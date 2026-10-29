@@ -1,0 +1,37 @@
+@*
+    Équilibre de trésorerie de fin d'exercice (réponses du métier C.2.7 et C.2.9), base des
+    reports de l'exercice suivant : grandeurs A à I et contrôle H = I.
+
+    <CarteEquilibreTresorerie Equilibre="_equilibre" />
+*@
+
+@if (Equilibre is { } e)
+{
+    <AppCard ClasseSup="mb-4" PaddingCorps="false" Titre="Équilibre de trésorerie et reports"
+             SousTitre="Le report est la part des AD qui n'ont pas reçu leur crédit de paiement ; H = I contrôle la cohérence des saisies.">
+        <MudSimpleTable Dense="true">
+            <tbody>
+                <tr><td>Total recettes recouvrées (A)</td><td class="tabular-nums text-right">@Formats.Montant(e.RecettesRecouvrees)</td></tr>
+                <tr><td>Total des engagements payés (B)</td><td class="tabular-nums text-right">@Formats.Montant(e.EngagementsPayes)</td></tr>
+                <tr class="font-semibold bg-gray-50"><td>Trésorerie sans déduction des encours (C) = A − B</td><td class="tabular-nums text-right">@Formats.Montant(e.TresorerieSansEncours)</td></tr>
+                <tr><td>Encours des engagements antérieurs (D)</td><td class="tabular-nums text-right">@Formats.Montant(e.EncoursAnterieurs)</td></tr>
+                <tr class="font-semibold bg-gray-50"><td>Trésorerie disponible en début d'année (E) = C − D</td><td class="tabular-nums text-right @(e.TresorerieDisponible < 0 ? "text-red-700" : "")">@Formats.Montant(e.TresorerieDisponible)</td></tr>
+                <tr><td>Taxes affectées non recouvrées (F)</td><td class="tabular-nums text-right">@Formats.Montant(e.TaxesNonRecouvrees)</td></tr>
+                <tr><td>Recettes propres non recouvrées (G)</td><td class="tabular-nums text-right">@Formats.Montant(e.RecettesPropresNonRecouvrees)</td></tr>
+                <tr class="font-semibold bg-gray-50"><td>Total des reports de ressources (H) = E + F + G</td><td class="tabular-nums text-right">@Formats.Montant(e.ReportsRessources)</td></tr>
+                <tr class="font-semibold"><td>Recettes émises − dépenses prises en charge (I)</td><td class="tabular-nums text-right">@Formats.Montant(e.SoldeEmisPrisEnCharge)</td></tr>
+                <tr>
+                    <td>Équilibre entre H et I</td>
+                    <td class="text-right">
+                        @if (e.Ecart == 0) { <AppBadge Variante="success" Petit="true">Équilibré</AppBadge> }
+                        else { <AppBadge Variante="danger" Petit="true">Écart @Formats.Montant(e.Ecart)</AppBadge> }
+                    </td>
+                </tr>
+            </tbody>
+        </MudSimpleTable>
+    </AppCard>
+}
+
+@code {
+    [Parameter] public EquilibreTresorerie? Equilibre { get; set; }
+}

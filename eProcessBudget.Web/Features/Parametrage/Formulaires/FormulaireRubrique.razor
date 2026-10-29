@@ -1,0 +1,26 @@
+@inherits FormulaireBase<Rubrique>
+@inject IReferentielService<Axe> ServiceAxe
+
+@* Formulaire de saisie : Rubrique. Généré à l'identique pour tous les référentiels ; les règles sont dans CatalogueReferentiels. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div class="sm:col-span-2"><ChoixReference Label="Axe" Elements="_axes" Obligatoire="true"
+                    Value="Element.AxeId" ValueChanged="v => Element.AxeId = v ?? Ulid.Empty" /></div>
+    <MudTextField @bind-Value="Element.Code" Label="Code" MaxLength="20" Required="true" RequiredError="Code : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Note" Label="Repère (a, b, c…)" MaxLength="5"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Libelle" Label="Libellé" MaxLength="250" Required="true" RequiredError="Libellé : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+    <MudNumericField T="int" @bind-Value="Element.Ordre" Label="Ordre d'affichage" Min="0"
+                     Variant="Variant.Outlined" Margin="Margin.Dense" />
+</div>
+
+@code {
+    private List<ElementListe> _axes = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _axes = await ServiceAxe.ListerPourSelectionAsync();
+    }
+}

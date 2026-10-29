@@ -1,0 +1,138 @@
+@page "/axes/entretien/avancement"
+@inject IAvancementService Service
+@inject IProjetService Projets
+@inject IReferentielService<TypeTravaux> ServiceTypeTravaux
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Avancement physique — Axes de dépenses</PageTitle>
+
+@*
+    Avancement physique de l'entretien routier (cahier fonctionnel § 3.5.2 et 3.5.4) :
+    kilomètres entretenus et taux d'avancement, par opération, mois, contrat et type de
+    travaux (C.2.11). Indicateur : kilométrage réalisé / prévu. Les projets de réhabilitation
+    de l'axe Investissements (C.2.4) s'y suivent aussi : le service contrôle le droit de
+    saisie de l'axe de chaque opération.
+*@
+
+<AutoriseSi DroitsRequis="Lecture">
+    <PageHeader Titre="Avancement physique" Description="Kilomètres entretenus par opération, mois et type de travaux, réhabilitations comprises.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><a href="@RoutesAxes.Entretien" class="hover:underline">Entretien routier</a>
+        </BreadcrumbContent>
+        <ActionsContent>
+            @if (Saisissable)
+            {
+                <AppButton Icone="plus" OnClick="() => EditerAsync(null)">Saisir un avancement</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <div class="flex flex-col lg:flex-row gap-3">
+            <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+            <ChoixReference Label="Opération" Elements="_projets" Value="_filtre.ProjetId" ValueChanged="v => FiltrerAsync(() => _filtre.ProjetId = v)" />
+            <ChoixReference Label="Type de travaux" Elements="_typesTravaux" Value="_filtre.TypeTravauxId" ValueChanged="v => FiltrerAsync(() => _filtre.TypeTravauxId = v)" />
+        </div>
+        @if (_exercice is { Statut: not StatutExercice.Ouvert })
+        {
+            <p class="text-xs text-gray-500 mt-3">L'avancement se saisit sur un exercice ouvert.</p>
+        }
+    </AppCard>
+
+    @if (_exercice is not null)
+    {
+        <AppCard PaddingCorps="false">
+            <ChildContent>
+                @if (_lignes.Count == 0)
+                {
+                    <EtatVide Icone="chart-bar" Titre="Aucun avancement saisi" />
+                }
+                else
+                {
+                    <TableAvancements Lignes="_lignes" AvecProjet="true" PeutSaisir="Saisissable" OnModifier="EditerAsync" OnSupprimer="SupprimerAsync" />
+                }
+            </ChildContent>
+            <PiedContent>
+                <div class="flex items-center justify-between">
+                    <p class="text-xs text-gray-500">@_total relevé(s) · @Formats.Nombre(_lignes.Sum(l => l.KmRealises ?? 0)) km sur cette page</p>
+                    @if (_total > Taille)
+                    {
+                        <MudPagination Count="@((int)Math.Ceiling(_total / (double)Taille))" Selected="_page" SelectedChanged="ChargerAsync" Size="Size.Small" Color="Color.Primary" />
+                    }
+                </div>
+            </PiedContent>
+        </AppCard>
+    }
+</AutoriseSi>
+
+@code {
+    private const int Taille = 20;
+    private static readonly TypeDroit[] Lecture = [.. AxesDepense.Entretien.Lecture, .. AxesDepense.Investissement.Lecture];
+
+    private readonly FiltreAvancements _filtre = new();
+    private LigneExercice? _exercice;
+    private List<LigneAvancement> _lignes = new();
+    private List<ElementListe> _projets = new(), _typesTravaux = new();
+    private int _total, _page = 1;
+    private bool _peutSaisir;
+
+    private bool Saisissable => _peutSaisir && _exercice is { Statut: StatutExercice.Ouvert };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var droits = await Droits.ObtenirDroitsAsync(await UserContext.ObtenirUserIdAsync());
+        _peutSaisir = droits.Contains(AxesDepense.Entretien.DroitSaisir) || droits.Contains(AxesDepense.Investissement.DroitSaisir);
+        _projets = await Projets.ListerOperationsTravauxAsync();
+        _typesTravaux = await ServiceTypeTravaux.ListerPourSelectionAsync(t => !t.EstPrestationControle);
+    }
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        await ChargerAsync(1);
+    }
+
+    private async Task FiltrerAsync(Action changer)
+    {
+        changer();
+        await ChargerAsync(1);
+    }
+
+    private async Task ChargerAsync(int page)
+    {
+        _page = page;
+        if (_exercice is null) return;
+        _filtre.ExerciceId = _exercice.Id;
+        (_lignes, _total) = await Service.ListerAsync(_filtre, page, Taille);
+    }
+
+    private async Task EditerAsync(LigneAvancement? a)
+    {
+        var saisie = a is null ? new SaisieAvancement { ProjetId = _filtre.ProjetId, TypeTravauxId = _filtre.TypeTravauxId } : await Service.ObtenirSaisieAsync(a.Id);
+        if (saisie is null) return;
+        var parametres = new DialogParameters<DialogAvancement> { { x => x.Saisie, saisie }, { x => x.ExerciceId, _exercice!.Id } };
+        var dialog = await DialogService.ShowAsync<DialogAvancement>(a is null ? "Saisir un avancement" : "Modifier l'avancement", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Avancement enregistré.", Severity.Success);
+            await ChargerAsync(_page);
+        }
+    }
+
+    private async Task SupprimerAsync(LigneAvancement a)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, "Supprimer l'avancement" }, { x => x.Message, $"Le relevé de {a.Mois.ToString("MMMM yyyy", Formats.Francais)} ({a.Projet}) est supprimé." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+        var (ok, erreur) = await Service.SupprimerAsync(a.Id);
+        Snackbar.Add(ok ? "Avancement supprimé." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync(_page);
+    }
+}

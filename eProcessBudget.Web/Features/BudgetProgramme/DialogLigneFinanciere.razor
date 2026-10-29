@@ -1,0 +1,110 @@
+@inject IProgrammationService Service
+@inject IReferentielService<ActionProgramme> ServiceAction
+@inject IReferentielService<Activite> ServiceActivite
+@inject IReferentielService<NatureDepense> ServiceNature
+@inject IReferentielService<SourceFinancement> ServiceSource
+
+@* Ligne de programmation financière : action (et activité), nature, source, AE et CP de N-1 à N+2. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <ChoixReference Label="Action" Elements="_actions" Obligatoire="true" Disabled="Modification"
+                            Value="_saisie.ActionId" ValueChanged="ChangerActionAsync" />
+            <ChoixReference Label="Activité (facultative)" Elements="_activites" Disabled="Modification"
+                            Value="_saisie.ActiviteId" ValueChanged="v => _saisie.ActiviteId = v" />
+            <ChoixReference Label="Nature de dépense" Elements="_natures" Obligatoire="true" Disabled="Modification"
+                            Value="_saisie.NatureDepenseId" ValueChanged="v => _saisie.NatureDepenseId = v ?? Ulid.Empty" />
+            <ChoixReference Label="Source de financement" Elements="_sources" Obligatoire="true" Disabled="Modification"
+                            Value="_saisie.SourceFinancementId" ValueChanged="v => _saisie.SourceFinancementId = v ?? Ulid.Empty" />
+        </div>
+
+        <MudSimpleTable Dense="true" Class="mt-4">
+            <thead><tr><th>Année</th><th>AE</th><th>CP</th></tr></thead>
+            <tbody>
+                @foreach (var a in _annees)
+                {
+                    <tr>
+                        <td class="whitespace-nowrap">@a@(a == Cycle.AnneeReference ? " (référence)" : "")</td>
+                        <td><MudNumericField T="decimal" Value="_ae[a]" ValueChanged="v => _ae[a] = v" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                        <td><MudNumericField T="decimal" Value="_cp[a]" ValueChanged="v => _cp[a] = v" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                    </tr>
+                }
+                <tr class="font-semibold">
+                    <td>Total triennal</td>
+                    <td class="tabular-nums">@Formats.Montant(_annees.Where(a => a >= Cycle.AnneeBase).Sum(a => _ae[a]))</td>
+                    <td class="tabular-nums">@Formats.Montant(_annees.Where(a => a >= Cycle.AnneeBase).Sum(a => _cp[a]))</td>
+                </tr>
+            </tbody>
+        </MudSimpleTable>
+        <p class="text-xs text-gray-500 mt-2">Les CP cumulés ne dépassent pas les AE cumulées. Une année à 0 / 0 n'est pas enregistrée.</p>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public LigneCycle Cycle { get; set; } = null!;
+    [Parameter] public Ulid ProgrammeId { get; set; }
+    [Parameter] public LigneProgrammationFinanciere? Ligne { get; set; }
+
+    private bool Modification => Ligne is not null;
+    private SaisieProgrammationFinanciere _saisie = new();
+    private int[] _annees = [];
+    private readonly Dictionary<int, decimal> _ae = new();
+    private readonly Dictionary<int, decimal> _cp = new();
+    private List<ElementListe> _actions = new(), _activites = new(), _natures = new(), _sources = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _annees = Enumerable.Range(Cycle.AnneeReference, Cycle.AnneeFin - Cycle.AnneeReference + 1).ToArray();
+        foreach (var a in _annees)
+        {
+            var m = Ligne?.Montants.GetValueOrDefault(a) ?? default;
+            _ae[a] = m.AE;
+            _cp[a] = m.CP;
+        }
+        _saisie = new SaisieProgrammationFinanciere
+        {
+            CycleId = Cycle.Id, ActionId = Ligne?.ActionId ?? Ulid.Empty, ActiviteId = Ligne?.ActiviteId,
+            NatureDepenseId = Ligne?.NatureDepenseId ?? Ulid.Empty, SourceFinancementId = Ligne?.SourceFinancementId ?? Ulid.Empty
+        };
+
+        var programmeId = ProgrammeId;
+        _actions = await ServiceAction.ListerPourSelectionAsync(a => a.ProgrammeId == programmeId);
+        _natures = await ServiceNature.ListerPourSelectionAsync();
+        _sources = await ServiceSource.ListerPourSelectionAsync();
+        await ChargerActivitesAsync();
+    }
+
+    private async Task ChangerActionAsync(Ulid? id)
+    {
+        _saisie.ActionId = id ?? Ulid.Empty;
+        _saisie.ActiviteId = null;
+        await ChargerActivitesAsync();
+    }
+
+    private async Task ChargerActivitesAsync()
+    {
+        var actionId = _saisie.ActionId;
+        _activites = actionId == Ulid.Empty ? new() : await ServiceActivite.ListerPourSelectionAsync(a => a.ActionId == actionId);
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _saisie.Montants = _annees.ToDictionary(a => a, a => new MontantsAECP(_ae[a], _cp[a]));
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.EnregistrerFinancierAsync(_saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

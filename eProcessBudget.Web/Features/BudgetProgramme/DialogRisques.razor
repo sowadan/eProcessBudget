@@ -1,0 +1,48 @@
+@inject ICadreLogiqueService CadreService
+@inject IReferentielService<Risque> ServiceRisque
+
+@* Risques d'un élément du cadre logique, choisis dans le catalogue (plusieurs possibles). *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        @if (_risques.Count == 0)
+        {
+            <p class="text-sm text-gray-500">Le catalogue des risques est vide (Paramétrage › Catalogue des risques).</p>
+        }
+        <div class="max-h-96 overflow-y-auto">
+            @foreach (var r in _risques)
+            {
+                <MudCheckBox T="bool" Value="@Selection.Contains(r.Id)" Dense="true" Color="Color.Primary" Label="@r.Libelle"
+                             ValueChanged="@(v => { if (v) Selection.Add(r.Id); else Selection.Remove(r.Id); })" />
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Ulid ElementId { get; set; }
+    [Parameter] public HashSet<Ulid> Selection { get; set; } = new();
+
+    private List<ElementListe> _risques = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync() => _risques = await ServiceRisque.ListerPourSelectionAsync();
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await CadreService.DefinirRisquesAsync(ElementId, Selection);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

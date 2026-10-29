@@ -1,0 +1,89 @@
+@page "/compte/reinitialiser"
+@layout CompteLayout
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@using Microsoft.Extensions.Options
+@inject IAuthentificationService Authentification
+@inject NavigationManager Nav
+@inject IOptions<ApplicationOptions> AppOptions
+
+<PageTitle>Nouveau mot de passe — @AppOptions.Value.Nom</PageTitle>
+
+@*
+    Choix d'un nouveau mot de passe depuis le lien reçu par e-mail. Le jeton est protégé
+    (Data Protection), limité dans le temps et à usage unique : il cesse d'être valide dès
+    que le mot de passe change.
+*@
+
+<h1 class="text-xl font-bold text-gray-800">Nouveau mot de passe</h1>
+
+@if (!_jetonValide)
+{
+    <div role="alert" class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        Ce lien de réinitialisation est invalide, expiré ou déjà utilisé.
+    </div>
+    <p class="text-center mt-6">
+        <a href="/compte/mot-de-passe-oublie" class="text-sm font-medium hover:underline" style="color: var(--app-primaire);">
+            Demander un nouveau lien
+        </a>
+    </p>
+}
+else
+{
+    <p class="text-sm text-gray-500 mt-1 mb-6">@Authentification.DescriptionPolitique</p>
+
+    @if (_erreur is not null)
+    {
+        <div role="alert" class="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">@_erreur</div>
+    }
+
+    <EditForm Model="Saisie" method="post" OnValidSubmit="ReinitialiserAsync" FormName="reinitialiser" novalidate>
+        <DataAnnotationsValidator />
+        <div class="space-y-4">
+            <div>
+                <label for="nouveau" class="block text-sm font-medium text-gray-700 mb-1">Nouveau mot de passe</label>
+                <InputText id="nouveau" type="password" @bind-Value="Saisie!.NouveauMotDePasse"
+                           autocomplete="new-password" maxlength="128" class="champ-compte" />
+                <ValidationMessage For="() => Saisie!.NouveauMotDePasse" class="text-xs text-red-600 mt-1" />
+            </div>
+            <div>
+                <label for="confirmation" class="block text-sm font-medium text-gray-700 mb-1">Confirmation</label>
+                <InputText id="confirmation" type="password" @bind-Value="Saisie!.Confirmation"
+                           autocomplete="new-password" maxlength="128" class="champ-compte" />
+                <ValidationMessage For="() => Saisie!.Confirmation" class="text-xs text-red-600 mt-1" />
+            </div>
+            <button type="submit" class="bouton-compte">Enregistrer le mot de passe</button>
+        </div>
+    </EditForm>
+}
+
+@code {
+    // Le formulaire est posté à l'adresse de la page, jeton compris dans la requête.
+    [SupplyParameterFromQuery(Name = "jeton")]
+    private string? Jeton { get; set; }
+
+    [SupplyParameterFromForm(FormName = "reinitialiser")]
+    private SaisieNouveauMotDePasse? Saisie { get; set; }
+
+    private bool _jetonValide;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Saisie ??= new SaisieNouveauMotDePasse();
+        _jetonValide = await Authentification.JetonReinitialisationValideAsync(Jeton);
+    }
+
+    private async Task ReinitialiserAsync()
+    {
+        var (ok, erreur) = await Authentification.ReinitialiserMotDePasseAsync(Jeton, Saisie!.NouveauMotDePasse);
+        if (!ok)
+        {
+            _erreur = erreur;
+            Saisie.NouveauMotDePasse = Saisie.Confirmation = string.Empty;
+            return;
+        }
+
+        Nav.NavigateTo("/compte/connexion?motif=reinitialise");
+    }
+}

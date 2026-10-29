@@ -1,0 +1,45 @@
+@*
+    État vide : ce qu'on affiche quand une liste ne contient rien.
+
+    Un tableau vide sans explication laisse l'utilisateur se demander si la page a
+    échoué. Ce composant dit ce qui manque et propose l'action qui remplit l'écran.
+
+    EXEMPLE
+    -------
+    <EtatVide Icone="collection"
+              Titre="Aucune commande"
+              Message="Les commandes que vous créez apparaîtront ici.">
+        <AppButton Icone="plus" OnClick="Creer">Créer une commande</AppButton>
+    </EtatVide>
+*@
+
+<div class="flex flex-col items-center justify-center text-center py-16 px-6">
+    <div class="w-14 h-14 rounded-2xl flex items-center justify-center mb-4 bg-gray-100">
+        <div class="w-7 h-7 text-gray-400" aria-hidden="true">
+            <AppIcon Nom="@Icone" Epaisseur="1.5" />
+        </div>
+    </div>
+
+    <h3 class="text-base font-semibold text-gray-700">@Titre</h3>
+
+    @if (!string.IsNullOrEmpty(Message))
+    {
+        <p class="text-sm text-gray-500 mt-1 max-w-sm">@Message</p>
+    }
+
+    @if (ChildContent is not null)
+    {
+        <div class="mt-5">@ChildContent</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Icone { get; set; } = "collection";
+    [Parameter] public string Titre { get; set; } = "Aucun élément";
+    [Parameter] public string Message { get; set; } = "";
+
+    /// <summary>Action proposée pour sortir de l'état vide.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}
+
+

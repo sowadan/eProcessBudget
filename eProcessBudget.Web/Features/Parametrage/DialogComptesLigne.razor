@@ -1,0 +1,117 @@
+@inject INomenclatureService Nomenclature
+@inject IReferentielService<CompteComptable> ServiceComptes
+
+@*
+    Comptes du plan comptable sur lesquels s'impute une ligne budgétaire (table
+    ref.LigneCompte) : au moins un, dont un principal (règle § 4.2).
+*@
+
+<MudDialog>
+    <DialogContent>
+        @if (_chargement)
+        {
+            <div class="flex justify-center py-8"><MudProgressCircular Indeterminate="true" Color="Color.Primary" /></div>
+        }
+        else
+        {
+            @if (_erreur is not null)
+            {
+                <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+            }
+
+            @if (PeutGerer)
+            {
+                <MudAutocomplete T="ElementListe" Value="_ajout" ValueChanged="Ajouter" Label="Ajouter un compte"
+                                 SearchFunc="Rechercher" ToStringFunc="@(e => e?.Libelle)" MinCharacters="1" ResetValueOnEmptyText="true"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" />
+            }
+
+            @if (_selection.Count == 0)
+            {
+                <AppAlert Variante="warning" Titre="Aucun compte">Une ligne budgétaire est imputée sur au moins un compte.</AppAlert>
+            }
+            else
+            {
+                <MudRadioGroup T="Ulid" @bind-Value="_principal" Disabled="!PeutGerer">
+                    @foreach (var compte in _selection)
+                    {
+                        <div class="flex items-center justify-between gap-2 py-1 border-b border-gray-100">
+                            <MudRadio T="Ulid" Value="@compte.Id" Color="Color.Primary" Dense="true">
+                                <span class="text-sm">@compte.Libelle</span>
+                                @if (compte.Id == _principal)
+                                {
+                                    <AppBadge Variante="info" Petit="true">Principal</AppBadge>
+                                }
+                            </MudRadio>
+                            @if (PeutGerer)
+                            {
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Close" OnClick="() => Retirer(compte)" />
+                            }
+                        </div>
+                    }
+                </MudRadioGroup>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">@(PeutGerer ? "Annuler" : "Fermer")</AppButton>
+        @if (PeutGerer)
+        {
+            <AppButton Icone="check-circle" EnChargement="_enregistrement" Desactive="_chargement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Ulid LigneId { get; set; }
+    [Parameter] public bool PeutGerer { get; set; }
+
+    private List<ElementListe> _comptes = new();
+    private readonly List<ElementListe> _selection = new();
+    private ElementListe? _ajout;
+    private Ulid _principal;
+    private bool _chargement = true;
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (PeutGerer) _comptes = await ServiceComptes.ListerPourSelectionAsync();
+        foreach (var c in await Nomenclature.ObtenirComptesLigneAsync(LigneId))
+        {
+            _selection.Add(new ElementListe(c.CompteId, $"{c.Numero} — {c.Libelle}"));
+            if (c.EstPrincipal) _principal = c.CompteId;
+        }
+        _chargement = false;
+    }
+
+    private Task<IEnumerable<ElementListe>> Rechercher(string? texte, CancellationToken _)
+        => Task.FromResult(_comptes
+            .Where(c => _selection.All(s => s.Id != c.Id)
+                     && (string.IsNullOrWhiteSpace(texte) || c.Libelle.Contains(texte, StringComparison.OrdinalIgnoreCase)))
+            .Take(30));
+
+    private void Ajouter(ElementListe? compte)
+    {
+        if (compte is null || _selection.Any(s => s.Id == compte.Id)) return;
+        _selection.Add(compte);
+        if (_selection.Count == 1) _principal = compte.Id;
+        _ajout = null;
+    }
+
+    private void Retirer(ElementListe compte)
+    {
+        _selection.Remove(compte);
+        if (_principal == compte.Id) _principal = _selection.FirstOrDefault()?.Id ?? default;
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Nomenclature.DefinirComptesLigneAsync(LigneId, _selection.Select(s => s.Id).ToList(),
+            _principal == default ? null : _principal);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

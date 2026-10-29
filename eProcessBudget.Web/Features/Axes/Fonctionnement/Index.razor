@@ -1,0 +1,239 @@
+@page "/axes/fonctionnement"
+@inject ISyntheseAxeService Synthese
+@inject IReferentielService<Site> ServiceSite
+@inject IReferentielService<Structure> ServiceStructure
+@inject NavigationManager Nav
+
+<PageTitle>Fonctionnement — Axes de dépenses</PageTitle>
+
+@*
+    Axe Fonctionnement (cahier fonctionnel § 3.7) : situation par activité budgétaire (selon
+    les clés de répartition des lignes), par site, par service et par nature de dépense ;
+    lignes de l'axe et lignes proches du dépassement ; dépenses de personnel mises en
+    regard des effectifs programmés (§ 3.3.6). Les dotations se saisissent dans Exécution
+    budgétaire › Dotations, avec leur site et leur service.
+*@
+
+<AutoriseSi DroitsRequis="Axe.Lecture">
+    <PageHeader Titre="Fonctionnement" Description="Budget de fonctionnement par activité, site, service et nature de dépense.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><span>Axes de dépenses</span>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+    </AppCard>
+
+    @if (_exercice is not null)
+    {
+        <CartesAxe Montants="_totaux" />
+
+        <MudTabs Elevation="0" Rounded="true" TabPanelsClass="pt-4" ActivePanelIndexChanged="ChangerOngletAsync">
+            <MudTabPanel Text="Par activité">
+                <AppCard PaddingCorps="false" Titre="Situation par activité" SousTitre="Chaque ligne est ventilée entre ses activités selon sa clé de répartition de l'exercice (Budget-programme › Répartitions).">
+                    <TableauRegroupement Lignes="LignesDe(Regroupement.Activite)" LibelleColonne="Activité" />
+                </AppCard>
+            </MudTabPanel>
+            <MudTabPanel Text="Par site">
+                <AppCard PaddingCorps="false"><TableauRegroupement Lignes="LignesDe(Regroupement.Site)" LibelleColonne="Site" /></AppCard>
+            </MudTabPanel>
+            <MudTabPanel Text="Par service">
+                <AppCard PaddingCorps="false"><TableauRegroupement Lignes="LignesDe(Regroupement.Structure)" LibelleColonne="Service" /></AppCard>
+            </MudTabPanel>
+            <MudTabPanel Text="Par nature">
+                <AppCard PaddingCorps="false"><TableauRegroupement Lignes="LignesDe(Regroupement.Nature)" LibelleColonne="Nature de dépense" /></AppCard>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Lignes">
+                <AppCard PaddingCorps="false">
+                    <TitreContent>
+                        <div class="flex flex-col lg:flex-row gap-3 w-full">
+                            <MudTextField T="string" @bind-Value="_filtre.Recherche" @bind-Value:after="() => ChargerLignesAsync(1)" Placeholder="Code ou libellé de ligne…"
+                                          DebounceInterval="300" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" />
+                            <ChoixReference Label="Site" Elements="_sites" Value="_filtre.SiteId" ValueChanged="v => FiltrerAsync(() => _filtre.SiteId = v)" />
+                            <ChoixReference Label="Service" Elements="_structures" Value="_filtre.StructureId" ValueChanged="v => FiltrerAsync(() => _filtre.StructureId = v)" />
+                        </div>
+                    </TitreContent>
+                    <ChildContent>
+                        @if (_dotations.Count == 0)
+                        {
+                            <EtatVide Icone="collection" Titre="Aucune dotation" />
+                        }
+                        else
+                        {
+                            <TableDotations Lignes="_dotations" />
+                        }
+                    </ChildContent>
+                    <PiedContent>
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs text-gray-500">@_totalDotations dotation(s)</p>
+                            @if (_totalDotations > Taille)
+                            {
+                                <MudPagination Count="@((int)Math.Ceiling(_totalDotations / (double)Taille))" Selected="_page" SelectedChanged="ChargerLignesAsync" Size="Size.Small" Color="Color.Primary" />
+                            }
+                        </div>
+                    </PiedContent>
+                </AppCard>
+            </MudTabPanel>
+
+            <MudTabPanel Text="@($"Proches du dépassement{(_sousTension is { Count: > 0 } ? $" ({_sousTension.Count})" : "")}")">
+                <AppCard PaddingCorps="false" Titre="Lignes proches du dépassement" SousTitre="Lignes dont le taux d'engagement (y compris reports) atteint un seuil d'alerte : ceux de la ligne, sinon de l'axe, sinon les seuils globaux.">
+                    @if (_sousTension is not { Count: > 0 })
+                    {
+                        <EtatVide Icone="check-circle" Titre="Aucune ligne n'atteint ses seuils d'alerte" />
+                    }
+                    else
+                    {
+                        <MudSimpleTable Dense="true" Hover="true">
+                            <thead>
+                                <tr><th>Ligne</th><th>Imputation</th><th class="text-right">Dotation totale</th><th class="text-right">Engagé</th><th style="min-width:180px">Taux d'engagement</th><th class="text-right">Seuil atteint</th><th class="text-right">Disponible</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var t in _sousTension)
+                                {
+                                    var d = t.Dotation;
+                                    <tr class="cursor-pointer" @onclick="() => Nav.NavigateTo(DetailDotation.Lien(d.Id))">
+                                        <td><span class="font-mono text-xs font-semibold">@d.LigneCode</span> — @d.LigneLibelle</td>
+                                        <td class="text-xs text-gray-500">@d.Imputation</td>
+                                        <td class="tabular-nums text-right">@Formats.Montant(d.Montants.DotationTotale)</td>
+                                        <td class="tabular-nums text-right">@Formats.Montant(d.Montants.AETotal)</td>
+                                        <td><Barre Taux="d.Montants.TauxEngagementYCReports" /></td>
+                                        <td class="tabular-nums text-right">@Formats.Pourcentage(t.Seuil)</td>
+                                        <td class="tabular-nums text-right @(d.Montants.Disponible < 0 ? "text-red-700 font-semibold" : "")">@Formats.Montant(d.Montants.Disponible)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                </AppCard>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Personnel et effectifs">
+                @if (_personnel is not null)
+                {
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                        <AppCard Titre="Dépenses de personnel" SousTitre="Lignes de l'axe de nature « Personnel ».">
+                            <dl class="space-y-1.5 text-sm">
+                                <LigneMontant Libelle="Dotation totale" Valeur="_personnel.Montants.DotationTotale" Fort="true" />
+                                <LigneMontant Libelle="Engagé" Valeur="_personnel.Montants.AETotal" />
+                                <LigneMontant Libelle="Payé" Valeur="_personnel.Montants.PaiementsTotal" />
+                            </dl>
+                            <dl class="space-y-1.5 text-sm mt-4 pt-3 border-t border-gray-100">
+                                <div class="flex justify-between gap-3"><dt class="text-gray-600">Dotation par emploi programmé</dt><dd class="tabular-nums">@Formats.Montant(_personnel.DotationParEmploi)</dd></div>
+                                <div class="flex justify-between gap-3"><dt class="text-gray-600">Payé par agent actif</dt><dd class="tabular-nums">@Formats.Montant(_personnel.PayeParAgent)</dd></div>
+                            </dl>
+                        </AppCard>
+                        <div class="lg:col-span-2">
+                            <AppCard PaddingCorps="false" Titre="Effectifs" SousTitre="@SousTitreEffectifs">
+                                @if (_personnel.Effectifs.Count == 0)
+                                {
+                                    <EtatVide Icone="users" Titre="Aucune catégorie d'emplois" />
+                                }
+                                else
+                                {
+                                    <MudSimpleTable Dense="true">
+                                        <thead><tr><th>Catégorie d'emplois</th><th class="text-right">Effectif programmé</th><th class="text-right">Agents actifs</th><th class="text-right">Écart</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var e in _personnel.Effectifs)
+                                            {
+                                                <tr>
+                                                    <td>@e.Categorie</td>
+                                                    <td class="tabular-nums text-right">@e.EffectifProgramme</td>
+                                                    <td class="tabular-nums text-right">@e.AgentsActifs</td>
+                                                    <td class="tabular-nums text-right @(e.AgentsActifs > e.EffectifProgramme ? "text-red-700" : "")">@(e.AgentsActifs - e.EffectifProgramme)</td>
+                                                </tr>
+                                            }
+                                            <tr class="font-semibold bg-gray-50">
+                                                <td>Total</td>
+                                                <td class="tabular-nums text-right">@_personnel.TotalProgramme</td>
+                                                <td class="tabular-nums text-right">@_personnel.TotalAgents</td>
+                                                <td class="tabular-nums text-right">@(_personnel.TotalAgents - _personnel.TotalProgramme)</td>
+                                            </tr>
+                                        </tbody>
+                                    </MudSimpleTable>
+                                }
+                            </AppCard>
+                        </div>
+                    </div>
+                }
+            </MudTabPanel>
+        </MudTabs>
+    }
+</AutoriseSi>
+
+@code {
+    private const int Taille = 20;
+    private static readonly AxeDepense Axe = AxesDepense.Fonctionnement;
+
+    // Onglets : 0 activité, 1 site, 2 service, 3 nature, 4 lignes, 5 proches du dépassement, 6 personnel.
+    private static readonly Regroupement[] Regroupements = [Regroupement.Activite, Regroupement.Site, Regroupement.Structure, Regroupement.Nature];
+
+    private LigneExercice? _exercice;
+    private MontantsDotation _totaux = MontantsDotation.Zero;
+    private readonly Dictionary<Regroupement, List<LigneRegroupement>> _regroupements = new();
+    private readonly FiltreDotations _filtre = new();
+    private List<LigneDotation> _dotations = new();
+    private List<LigneSousTension>? _sousTension;
+    private PersonnelEffectifs? _personnel;
+    private List<ElementListe> _sites = new(), _structures = new();
+    private int _onglet, _page = 1, _totalDotations;
+
+    private string SousTitreEffectifs => _personnel?.Cycle is { } cycle
+        ? $"Effectifs programmés de l'année {_exercice?.Annee} dans le cycle « {cycle} » ; agents actifs au référentiel."
+        : "Aucun cycle de programmation rattaché à l'exercice : effectifs programmés indisponibles.";
+
+    private List<LigneRegroupement> LignesDe(Regroupement r) => _regroupements.GetValueOrDefault(r) ?? new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _sites = await ServiceSite.ListerPourSelectionAsync();
+        _structures = await ServiceStructure.ListerPourSelectionAsync();
+    }
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        _regroupements.Clear();
+        _sousTension = null;
+        _personnel = null;
+        if (e is null) return;
+        _totaux = await Synthese.TotauxAsync(Axe, e.Id);
+        _sousTension = await Synthese.ProchesDepassementAsync(Axe, e.Id);
+        await ChargerOngletAsync();
+    }
+
+    private async Task ChangerOngletAsync(int index)
+    {
+        _onglet = index;
+        await ChargerOngletAsync();
+    }
+
+    /// <summary>Chaque onglet n'est calculé qu'à son ouverture.</summary>
+    private async Task ChargerOngletAsync()
+    {
+        if (_exercice is null) return;
+        if (_onglet < Regroupements.Length)
+        {
+            var r = Regroupements[_onglet];
+            if (!_regroupements.ContainsKey(r)) _regroupements[r] = await Synthese.RegrouperAsync(Axe, _exercice.Id, r);
+        }
+        else if (_onglet == 4) await ChargerLignesAsync(_page);
+        else if (_onglet == 6 && _personnel is null) _personnel = await Synthese.PersonnelAsync(_exercice.Id);
+    }
+
+    private async Task FiltrerAsync(Action changer)
+    {
+        changer();
+        await ChargerLignesAsync(1);
+    }
+
+    private async Task ChargerLignesAsync(int page)
+    {
+        _page = page;
+        if (_exercice is null) return;
+        _filtre.ExerciceId = _exercice.Id;
+        (_dotations, _totalDotations) = await Synthese.ListerDotationsAsync(Axe, _filtre, page, Taille);
+    }
+}

@@ -1,0 +1,82 @@
+@*
+    Carte de contenu : le conteneur de base de toutes les pages.
+
+    TROIS USAGES
+    ------------
+    1. Contenu seul          : <AppCard>...</AppCard>
+    2. Avec titre            : <AppCard Titre="Détail" SousTitre="Informations générales">...</AppCard>
+    3. Avec zones nommées    : dès que vous utilisez TitreContent / ActionsContent / PiedContent,
+                               le contenu principal doit être explicitement dans <ChildContent>.
+
+    <AppCard Titre="Membres">
+        <ActionsContent><AppButton Taille="sm" Icone="plus">Ajouter</AppButton></ActionsContent>
+        <ChildContent>...</ChildContent>
+    </AppCard>
+
+    PaddingCorps="false" pour un tableau qui doit toucher les bords de la carte.
+*@
+
+<div class="@Classes">
+
+    @if (AEntete)
+    {
+        <div class="carte-entete flex items-center justify-between gap-4 px-6 py-4">
+            <div class="min-w-0">
+                @if (TitreContent is not null)
+                {
+                    @TitreContent
+                }
+                else
+                {
+                    @if (!string.IsNullOrEmpty(Titre))
+                    {
+                        <h3 class="text-base font-semibold">@Titre</h3>
+                    }
+                    @if (!string.IsNullOrEmpty(SousTitre))
+                    {
+                        <p class="text-sm text-gray-500 mt-0.5">@SousTitre</p>
+                    }
+                }
+            </div>
+
+            @if (ActionsContent is not null)
+            {
+                <div class="flex items-center gap-2 flex-shrink-0">@ActionsContent</div>
+            }
+        </div>
+    }
+
+    <div class="@(PaddingCorps ? "p-6" : "")">
+        @ChildContent
+    </div>
+
+    @if (PiedContent is not null)
+    {
+        <div class="carte-pied px-6 py-3">
+            @PiedContent
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? TitreContent { get; set; }
+    [Parameter] public RenderFragment? ActionsContent { get; set; }
+    [Parameter] public RenderFragment? PiedContent { get; set; }
+
+    [Parameter] public string Titre { get; set; } = "";
+    [Parameter] public string SousTitre { get; set; } = "";
+
+    /// <summary>false pour coller le contenu aux bords (cas d'un tableau pleine largeur).</summary>
+    [Parameter] public bool PaddingCorps { get; set; } = true;
+
+    /// <summary>Classes Tailwind ajoutées au conteneur (marges, largeur...).</summary>
+    [Parameter] public string ClasseSup { get; set; } = "";
+
+    private bool AEntete => !string.IsNullOrEmpty(Titre) || !string.IsNullOrEmpty(SousTitre) || TitreContent is not null || ActionsContent is not null;
+
+    // Couleurs de la charte : voir .carte, .carte-titree, .carte-entete et .carte-pied dans app.css.
+    private string Classes => $"carte {(AEntete ? "carte-titree" : "")} {ClasseSup}";
+}
+
+

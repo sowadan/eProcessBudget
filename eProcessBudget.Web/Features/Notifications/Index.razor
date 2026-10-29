@@ -1,0 +1,273 @@
+@page "/notifications"
+@inject INotificationService Notifications
+@inject IUserContextService UserContext
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Notifications</PageTitle>
+
+@*
+    Historique complet des notifications de l'utilisateur, avec filtres et actions de masse.
+
+    La page ne connaît que INotificationService, qui délègue au stockage en base.
+*@
+
+<PageHeader Titre="Notifications"
+            Description="Toutes les notifications qui vous sont adressées.">
+    <ActionsContent>
+        @if (_nonLues > 0)
+        {
+            <AppButton Variante="outline" Icone="check-circle" OnClick="ToutMarquerLu">
+                Tout marquer lu
+            </AppButton>
+        }
+        <AppButton Variante="ghost" Icone="trash" OnClick="SupprimerLues">
+            Vider les lues
+        </AppButton>
+    </ActionsContent>
+</PageHeader>
+
+<!-- ═══ Filtres ══════════════════════════════════════════════════════════ -->
+<AppCard ClasseSup="mb-6">
+    <div class="flex flex-col sm:flex-row gap-3">
+        <MudTextField T="string" @bind-Value="_recherche" @bind-Value:after="RechercherAsync"
+                      Placeholder="Rechercher dans les messages…"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="false"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Class="flex-1" />
+
+        <MudSelect T="string" @bind-Value="_filtreLecture" @bind-Value:after="RechercherAsync"
+                   Label="État" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:150px;">
+            <MudSelectItem Value="@("tous")">Toutes</MudSelectItem>
+            <MudSelectItem Value="@("nonlues")">Non lues</MudSelectItem>
+            <MudSelectItem Value="@("lues")">Lues</MudSelectItem>
+        </MudSelect>
+
+        <MudSelect T="TypeNotification?" @bind-Value="_filtreType" @bind-Value:after="RechercherAsync"
+                   Label="Type" Variant="Variant.Outlined" Margin="Margin.Dense"
+                   Clearable="true" Style="min-width:180px;">
+            @foreach (var type in Enum.GetValues<TypeNotification>())
+            {
+                <MudSelectItem T="TypeNotification?" Value="@type">
+                    @NotificationHelpers.Libelle(type)
+                </MudSelectItem>
+            }
+        </MudSelect>
+    </div>
+</AppCard>
+
+<!-- ═══ Liste ════════════════════════════════════════════════════════════ -->
+<AppCard PaddingCorps="false">
+    <ChildContent>
+    @if (_chargement)
+    {
+        <div class="flex justify-center py-16">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+        </div>
+    }
+    else if (_items.Count == 0)
+    {
+        <EtatVide Icone="bell"
+                  Titre="Aucune notification"
+                  Message="@(EstFiltre
+                             ? "Aucune notification ne correspond à ces filtres."
+                             : "Les notifications qui vous seront adressées apparaîtront ici.")">
+            @if (EstFiltre)
+            {
+                <AppButton Variante="outline" OnClick="ReinitialiserFiltres">Réinitialiser les filtres</AppButton>
+            }
+        </EtatVide>
+    }
+    else
+    {
+        <div class="divide-y divide-gray-100">
+            @{ string? groupePrecedent = null; }
+
+            @foreach (var n in _items)
+            {
+                var groupe = NotificationHelpers.GroupeDate(n.DateCreation);
+
+                @if (groupe != groupePrecedent)
+                {
+                    groupePrecedent = groupe;
+                    <div class="px-6 py-2 bg-gray-50 border-y border-gray-100">
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-gray-500">@groupe</p>
+                    </div>
+                }
+
+                var (fond, texte) = NotificationHelpers.Couleurs(n.Type);
+
+                <div class="flex items-start gap-4 px-6 py-4 hover:bg-gray-50 transition-colors @(n.EstLue ? "" : "bg-blue-50/20")">
+
+                    <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                         style="background:@fond; color:@texte;">
+                        <MudIcon Icon="@NotificationHelpers.Icone(n.Type)" Size="Size.Small" />
+                    </div>
+
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <p class="text-sm font-semibold text-gray-800">
+                                @(string.IsNullOrWhiteSpace(n.Titre) ? NotificationHelpers.Libelle(n.Type) : n.Titre)
+                            </p>
+                            @if (!n.EstLue)
+                            {
+                                <AppBadge Variante="info" Petit="true">Nouveau</AppBadge>
+                            }
+                        </div>
+
+                        <p class="text-sm text-gray-600 mt-0.5">@n.Message</p>
+
+                        <div class="flex items-center gap-3 mt-2">
+                            <span class="text-xs text-gray-400">@NotificationHelpers.TempsRelatif(n.DateCreation)</span>
+
+                            @if (!string.IsNullOrWhiteSpace(n.Lien))
+                            {
+                                <button type="button" @onclick="() => OuvrirAsync(n)"
+                                        class="text-xs font-medium hover:underline"
+                                        style="color: var(--app-primaire);">
+                                    Ouvrir
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-1 flex-shrink-0">
+                        <MudTooltip Text="@(n.EstLue ? "Marquer non lue" : "Marquer lue")">
+                            <MudIconButton Size="Size.Small"
+                                           Icon="@(n.EstLue ? Icons.Material.Outlined.MarkEmailUnread : Icons.Material.Outlined.MarkEmailRead)"
+                                           OnClick="() => BasculerLectureAsync(n)" />
+                        </MudTooltip>
+
+                        <MudTooltip Text="Supprimer">
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Delete"
+                                           OnClick="() => SupprimerAsync(n)" />
+                        </MudTooltip>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    </ChildContent>
+
+    <PiedContent>
+        <div class="flex items-center justify-between gap-4 flex-wrap">
+            <p class="text-xs text-gray-500">
+                @_total notification(s) — @_nonLues non lue(s)
+            </p>
+
+            @if (_total > _taille)
+            {
+                <MudPagination Count="@((int)Math.Ceiling(_total / (double)_taille))"
+                               Selected="_page" SelectedChanged="ChangerPageAsync"
+                               Color="Color.Primary" Size="Size.Small" />
+            }
+        </div>
+    </PiedContent>
+</AppCard>
+
+@code {
+    private const int _taille = 20;
+
+    private Ulid _userId;
+    private bool _chargement = true;
+
+    private List<Notification> _items = new();
+    private int _total;
+    private int _nonLues;
+    private int _page = 1;
+
+    private string _recherche = "";
+    private string _filtreLecture = "tous";
+    private TypeNotification? _filtreType;
+
+    private bool EstFiltre =>
+        !string.IsNullOrWhiteSpace(_recherche) || _filtreLecture != "tous" || _filtreType is not null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userId = await UserContext.ObtenirUserIdAsync();
+        await ChargerAsync();
+    }
+
+    private async Task ChargerAsync()
+    {
+        if (_userId == Ulid.Empty) { _chargement = false; return; }
+
+        _chargement = true;
+
+        bool? estLue = _filtreLecture switch
+        {
+            "lues"    => true,
+            "nonlues" => false,
+            _         => null
+        };
+
+        (_items, _total, _nonLues) = await Notifications.ObtenirPageAsync(
+            _userId, _page, _taille, estLue, _filtreType,
+            string.IsNullOrWhiteSpace(_recherche) ? null : _recherche);
+
+        _chargement = false;
+    }
+
+    /// <summary>Tout changement de filtre ramène à la première page : rester page 3 d'un autre filtre n'a pas de sens.</summary>
+    private async Task RechercherAsync()
+    {
+        _page = 1;
+        await ChargerAsync();
+    }
+
+    private async Task ChangerPageAsync(int page)
+    {
+        _page = page;
+        await ChargerAsync();
+    }
+
+    private async Task ReinitialiserFiltres()
+    {
+        _recherche = "";
+        _filtreLecture = "tous";
+        _filtreType = null;
+        await RechercherAsync();
+    }
+
+    private async Task BasculerLectureAsync(Notification n)
+    {
+        if (n.EstLue) await Notifications.MarquerNonLueAsync(n.Id, _userId);
+        else          await Notifications.MarquerLueAsync(n.Id, _userId);
+
+        await ChargerAsync();
+    }
+
+    private async Task OuvrirAsync(Notification n)
+    {
+        if (!n.EstLue) await Notifications.MarquerLueAsync(n.Id, _userId);
+        if (!string.IsNullOrWhiteSpace(n.Lien)) Nav.NavigateTo(n.Lien);
+    }
+
+    private async Task SupprimerAsync(Notification n)
+    {
+        await Notifications.SupprimerAsync(n.Id, _userId);
+        Snackbar.Add("Notification supprimée.", Severity.Success);
+        await ChargerAsync();
+    }
+
+    private async Task ToutMarquerLu()
+    {
+        await Notifications.MarquerToutesLuesAsync(_userId);
+        Snackbar.Add("Toutes les notifications sont marquées comme lues.", Severity.Success);
+        await ChargerAsync();
+    }
+
+    private async Task SupprimerLues()
+    {
+        var nb = await Notifications.SupprimerLuesAsync(_userId);
+
+        Snackbar.Add(nb == 0 ? "Aucune notification lue à supprimer."
+                             : $"{nb} notification(s) supprimée(s).",
+                     nb == 0 ? Severity.Info : Severity.Success);
+
+        await ChargerAsync();
+    }
+}
+
+

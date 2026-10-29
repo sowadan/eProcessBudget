@@ -1,0 +1,68 @@
+@typeparam T where T : EntiteOrganisme, new()
+@inject IReferentielService<T> Service
+
+@*
+    Création (Id = Ulid.Empty) ou modification d'un élément de référentiel. Les champs
+    viennent du composant Formulaire (Features/Parametrage/Formulaires), qui reçoit
+    l'élément en paramètre « Element ». Les règles sont vérifiées par le service.
+*@
+
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="Element" OnValidSubmit="EnregistrerAsync" id="form-referentiel">
+            @if (!string.IsNullOrEmpty(_erreur))
+            {
+                <div class="mb-4">
+                    <AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert>
+                </div>
+            }
+
+            <DynamicComponent Type="Formulaire" Parameters="_parametres" />
+        </EditForm>
+    </DialogContent>
+
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Type="submit" Icone="check-circle" EnChargement="_enregistrement"
+                   AttributsSupplementaires="@(new Dictionary<string, object> { { "form", "form-referentiel" } })">
+            Enregistrer
+        </AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter, EditorRequired] public T Element { get; set; } = new();
+    [Parameter, EditorRequired] public Type Formulaire { get; set; } = null!;
+
+    private Dictionary<string, object?> _parametres = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override void OnParametersSet() => _parametres = new() { ["Element"] = Element };
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        _erreur = null;
+
+        var (ok, erreur) = Element.Id == Ulid.Empty
+            ? await CreerAsync()
+            : await Service.ModifierAsync(Element);
+
+        _enregistrement = false;
+        if (!ok)
+        {
+            _erreur = erreur;
+            return;
+        }
+
+        Dialog.Close(DialogResult.Ok(Element));
+    }
+
+    private async Task<(bool, string?)> CreerAsync()
+    {
+        var (ok, erreur, _) = await Service.CreerAsync(Element);
+        return (ok, erreur);
+    }
+}

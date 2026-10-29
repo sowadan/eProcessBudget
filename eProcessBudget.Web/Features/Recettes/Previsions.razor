@@ -1,0 +1,224 @@
+@page "/recettes/previsions"
+@inject IPrevisionRecetteService Service
+@inject IReferentielService<Site> ServiceSite
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Prévisions — Recettes</PageTitle>
+
+@*
+    Prévisions de recettes de l'exercice (cahier fonctionnel § 3.9.2) : par ligne, nature,
+    site et organisme collecteur. Prévision initiale saisie en préparation et figée à
+    l'ouverture ; ensuite, révisions motivées. Échéancier de recouvrement par prévision.
+*@
+
+<AutoriseSi DroitsRequis="AccesRecettes.Lecture">
+    <PageHeader Titre="Prévisions de recettes" Description="Prévision initiale, révisions, échéancier et encaissé de chaque prévision.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><a href="/recettes" class="hover:underline">Recettes</a>
+        </BreadcrumbContent>
+        <ActionsContent>
+            @if (_peutSaisir && _exercice is { Statut: not StatutExercice.Cloture })
+            {
+                <AppButton Icone="plus" OnClick="() => EditerAsync(null)">Nouvelle prévision</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <div class="flex flex-col lg:flex-row gap-3">
+            <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+            <MudSelect T="CategorieRecette?" Value="_filtre.Categorie" ValueChanged="v => FiltrerAsync(() => _filtre.Categorie = v)" Label="Catégorie" Clearable="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(c => c is { } v ? LibellesParametrage.De(LibellesParametrage.CategorieRecette, v) : "")">
+                @foreach (var (valeur, libelle) in LibellesParametrage.CategorieRecette.Where(c => c.Key != CategorieRecette.ReportRessourcesAnterieures))
+                {
+                    <MudSelectItem T="CategorieRecette?" Value="@valeur">@libelle</MudSelectItem>
+                }
+            </MudSelect>
+            <ChoixReference Label="Site" Elements="_sites" Value="_filtre.SiteId" ValueChanged="v => FiltrerAsync(() => _filtre.SiteId = v)" />
+            <MudTextField T="string" @bind-Value="_filtre.Recherche" @bind-Value:after="() => ChargerAsync(1)" Placeholder="Ligne ou nature…"
+                          DebounceInterval="300" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" />
+        </div>
+        @if (_exercice?.Statut == StatutExercice.EnPreparation)
+        {
+            <p class="text-xs text-gray-500 mt-3">Exercice en préparation : la prévision initiale se saisit librement. Elle sera figée à l'ouverture de l'exercice.</p>
+        }
+    </AppCard>
+
+    @if (_exercice is not null)
+    {
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            <AppStatCard Label="Prévision initiale" Valeur="@Formats.Montant(_totaux.PrevisionInitiale)" Icone="collection" />
+            <AppStatCard Label="Prévision retenue" Valeur="@Formats.Montant(_totaux.PrevisionRetenue)" Icone="adjustments"
+                         SousTitre="@($"Révisions {Formats.Montant(_totaux.Revision)}")" CouleurFond="#FEF3C7" CouleurIcone="#B45309" />
+            <AppStatCard Label="Encaissé" Valeur="@Formats.Montant(_totaux.Encaisse)" Icone="cash"
+                         SousTitre="@($"Recouvrement {Formats.Taux(_totaux.TauxRecouvrement)}")" CouleurFond="#DCFCE7" CouleurIcone="#15803D" />
+            <AppStatCard Label="Reste à recouvrer" Valeur="@Formats.Montant(_totaux.Ecart)" Icone="clock" CouleurFond="#F3E8FF" CouleurIcone="#7E22CE" />
+        </div>
+
+        <AppCard PaddingCorps="false">
+            <ChildContent>
+                @if (_lignes.Count == 0)
+                {
+                    <EtatVide Icone="collection" Titre="Aucune prévision" Message="Saisissez les prévisions de recettes de l'exercice." />
+                }
+                else
+                {
+                    <MudSimpleTable Dense="true" Hover="true">
+                        <thead>
+                            <tr>
+                                <th>Ligne</th><th>Nature · site · collecteur</th><th class="text-right">Initiale</th><th class="text-right">Retenue</th>
+                                <th class="text-right">Encaissé</th><th style="min-width:160px">Recouvrement</th><th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var p in _lignes)
+                            {
+                                <tr>
+                                    <td><span class="font-mono text-xs font-semibold">@p.LigneCode</span> — @p.LigneLibelle</td>
+                                    <td class="text-xs">
+                                        @p.Imputation
+                                        <div class="text-gray-400">@LibellesParametrage.De(LibellesParametrage.CategorieRecette, p.Categorie)</div>
+                                    </td>
+                                    <td class="tabular-nums text-right">@Formats.Montant(p.Montants.PrevisionInitiale)</td>
+                                    <td class="tabular-nums text-right">
+                                        @Formats.Montant(p.Montants.PrevisionRetenue)
+                                        @if (p.MotifRevision is not null) { <div class="text-xs text-gray-500" title="@p.MotifRevision">révisée</div> }
+                                    </td>
+                                    <td class="tabular-nums text-right">@Formats.Montant(p.Montants.Encaisse)</td>
+                                    <td><Barre Taux="p.Montants.TauxRecouvrement" /></td>
+                                    <td class="text-right whitespace-nowrap">
+                                        <MudTooltip Text="@($"Échéancier ({p.NbEcheances})")">
+                                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.EventNote" OnClick="() => EcheancierAsync(p)" />
+                                        </MudTooltip>
+                                        @if (_peutSaisir && _exercice.Statut == StatutExercice.EnPreparation)
+                                        {
+                                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditerAsync(p)" />
+                                        }
+                                        @if (_peutSaisir && _exercice.Statut == StatutExercice.Ouvert)
+                                        {
+                                            <MudTooltip Text="Réviser">
+                                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Tune" OnClick="() => ReviserAsync(p)" />
+                                            </MudTooltip>
+                                        }
+                                        @if (_peutSaisir && _exercice.Statut != StatutExercice.Cloture)
+                                        {
+                                            <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerAsync(p)" />
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </ChildContent>
+            <PiedContent>
+                <div class="flex items-center justify-between">
+                    <p class="text-xs text-gray-500">@_total prévision(s)</p>
+                    @if (_total > Taille)
+                    {
+                        <MudPagination Count="@((int)Math.Ceiling(_total / (double)Taille))" Selected="_page" SelectedChanged="ChargerAsync" Size="Size.Small" Color="Color.Primary" />
+                    }
+                </div>
+            </PiedContent>
+        </AppCard>
+    }
+</AutoriseSi>
+
+@code {
+    private const int Taille = 20;
+
+    private readonly FiltrePrevisions _filtre = new();
+    private LigneExercice? _exercice;
+    private List<LignePrevision> _lignes = new();
+    private List<ElementListe> _sites = new();
+    private MontantsRecette _totaux = MontantsRecette.Zero;
+    private int _total, _page = 1;
+    private bool _peutSaisir;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutSaisir = (await Droits.ObtenirDroitsAsync(await UserContext.ObtenirUserIdAsync())).Contains(TypeDroit.PrevisionRecetteSaisir);
+        _sites = await ServiceSite.ListerPourSelectionAsync();
+    }
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        await ChargerAsync(1);
+    }
+
+    private async Task FiltrerAsync(Action changer)
+    {
+        changer();
+        await ChargerAsync(1);
+    }
+
+    private async Task ChargerAsync(int page)
+    {
+        _page = page;
+        if (_exercice is null) return;
+        _filtre.ExerciceId = _exercice.Id;
+        (_lignes, _total) = await Service.ListerAsync(_filtre, page, Taille);
+        _totaux = await Service.TotauxAsync(_filtre);
+    }
+
+    private async Task EditerAsync(LignePrevision? p)
+    {
+        var saisie = p is null ? new SaisiePrevision { ExerciceId = _exercice!.Id } : await Service.ObtenirSaisieAsync(p.Id);
+        if (saisie is null) return;
+        var parametres = new DialogParameters<DialogPrevision>
+        {
+            { x => x.Saisie, saisie }, { x => x.EnPreparation, _exercice!.Statut == StatutExercice.EnPreparation }
+        };
+        var dialog = await DialogService.ShowAsync<DialogPrevision>(p is null ? "Nouvelle prévision de recette" : "Modifier la prévision", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Prévision enregistrée.", Severity.Success);
+            await ChargerAsync(_page);
+        }
+    }
+
+    private async Task ReviserAsync(LignePrevision p)
+    {
+        var dialog = await DialogService.ShowAsync<DialogRevision>("Réviser la prévision", new DialogParameters<DialogRevision> { { x => x.Prevision, p } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Prévision révisée.", Severity.Success);
+            await ChargerAsync(_page);
+        }
+    }
+
+    private async Task EcheancierAsync(LignePrevision p)
+    {
+        var parametres = new DialogParameters<DialogEcheancier>
+        {
+            { x => x.Prevision, p }, { x => x.PeutSaisir, _peutSaisir && _exercice!.Statut != StatutExercice.Cloture }
+        };
+        var dialog = await DialogService.ShowAsync<DialogEcheancier>($"Échéancier de recouvrement — {p.Imputation}", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Échéancier enregistré.", Severity.Success);
+            await ChargerAsync(_page);
+        }
+    }
+
+    private async Task SupprimerAsync(LignePrevision p)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, "Supprimer la prévision" }, { x => x.Message, $"La prévision {p.LigneCode} — {p.Imputation} est supprimée, avec son échéancier." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+        var (ok, erreur) = await Service.SupprimerAsync(p.Id);
+        Snackbar.Add(ok ? "Prévision supprimée." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync(_page);
+    }
+}

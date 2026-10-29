@@ -1,0 +1,160 @@
+@page "/administration/notifications"
+@using Microsoft.Extensions.Options
+@inject IParametreNotificationService Parametres
+@inject INotificationService NotificationService
+@inject IUserContextService UserContext
+@inject ISnackbar Snackbar
+@inject IOptions<EmailOptions> Email
+
+<PageTitle>Canaux de notification — Administration</PageTitle>
+
+@*
+    Réglage, par type d'événement, des canaux d'acheminement :
+      - INTERNE : notification persistée et poussée dans la cloche ;
+      - EMAIL   : email envoyé au destinataire.
+
+    Les deux sont indépendants. Un type sans aucun canal actif ne produit rien : c'est
+    la façon de couper un événement trop bavard sans toucher au code qui l'émet.
+*@
+
+<AutoriseSi DroitsRequis="new[] { TypeDroit.NotificationParametrage }">
+
+    <PageHeader Titre="Canaux de notification"
+                Description="Comment chaque type d'événement est acheminé aux utilisateurs.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a>
+            <span>/</span>
+            <span class="text-gray-700">Administration</span>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    @if (!Email.Value.Active)
+    {
+        <AppAlert Variante="info" Titre="Canal email globalement désactivé" ClasseSup="mb-6">
+            <code>Email:Active</code> vaut <code>false</code> : aucun email ne partira, quel
+            que soit le réglage ci-dessous. Renseignez le relais SMTP dans
+            <code>appsettings.json</code> puis activez-le —
+            voir <code>docs/06-notifications.md</code>.
+        </AppAlert>
+    }
+
+    <AppCard PaddingCorps="false">
+        <ChildContent>
+            @if (_chargement)
+            {
+                <div class="flex justify-center py-16">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                </div>
+            }
+            else
+            {
+                <div class="zone-defilante">
+                    <MudTable Items="_parametres" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Type d'événement</MudTh>
+                            <MudTh Style="text-align:center">Cloche (interne)</MudTh>
+                            <MudTh Style="text-align:center">Email</MudTh>
+                            <MudTh Style="text-align:right">Test</MudTh>
+                        </HeaderContent>
+
+                        <RowTemplate>
+                            <MudTd DataLabel="Type">
+                                <div class="flex items-center gap-3">
+                                    @{ var (fond, texte) = NotificationHelpers.Couleurs(context.Type); }
+                                    <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                                         style="background:@fond; color:@texte;">
+                                        <MudIcon Icon="@NotificationHelpers.Icone(context.Type)" Size="Size.Small" />
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-800">
+                                            @NotificationHelpers.Libelle(context.Type)
+                                        </p>
+                                        <code class="text-[10px] text-gray-400">@context.Type</code>
+                                    </div>
+                                </div>
+                            </MudTd>
+
+                            <MudTd DataLabel="Interne" Style="text-align:center">
+                                <MudSwitch T="bool" Value="@context.CanalInterneActif"
+                                           ValueChanged="@(v => DefinirAsync(context, v, context.CanalEmailActif))"
+                                           Color="Color.Primary" />
+                            </MudTd>
+
+                            <MudTd DataLabel="Email" Style="text-align:center">
+                                <MudSwitch T="bool" Value="@context.CanalEmailActif"
+                                           ValueChanged="@(v => DefinirAsync(context, context.CanalInterneActif, v))"
+                                           Color="Color.Primary" Disabled="@(!Email.Value.Active)" />
+                            </MudTd>
+
+                            <MudTd DataLabel="Test" Style="text-align:right">
+                                <MudTooltip Text="M'envoyer une notification de ce type">
+                                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Send"
+                                                   OnClick="() => TesterAsync(context.Type)" />
+                                </MudTooltip>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </div>
+            }
+        </ChildContent>
+
+        <PiedContent>
+            <p class="text-xs text-gray-500">
+                Une ligne est créée automatiquement pour chaque valeur ajoutée à
+                l'énumération <code>TypeNotification</code> : aucune migration de données
+                n'est nécessaire quand vous en ajoutez une.
+            </p>
+        </PiedContent>
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    private List<ParametreNotification> _parametres = new();
+    private bool _chargement = true;
+
+    protected override async Task OnInitializedAsync() => await ChargerAsync();
+
+    private async Task ChargerAsync()
+    {
+        _chargement = true;
+        _parametres = await Parametres.ObtenirTousAsync();
+        _chargement = false;
+    }
+
+    private async Task DefinirAsync(ParametreNotification p, bool interne, bool email)
+    {
+        var userId = await UserContext.ObtenirUserIdAsync();
+        if (!await Parametres.DefinirCanauxAsync(p.Type, interne, email, userId))
+        {
+            Snackbar.Add("Vous n'avez pas le droit de paramétrer les canaux de notification.", Severity.Error);
+            return;
+        }
+
+        // Mise à jour locale : évite de relire toute la table pour un interrupteur.
+        p.CanalInterneActif = interne;
+        p.CanalEmailActif = email;
+
+        Snackbar.Add($"Canaux mis à jour pour « {NotificationHelpers.Libelle(p.Type)} ».", Severity.Success);
+    }
+
+    /// <summary>Vérifie de bout en bout qu'un type d'événement produit bien ce qu'on attend.</summary>
+    private async Task TesterAsync(TypeNotification type)
+    {
+        var userId = await UserContext.ObtenirUserIdAsync();
+        if (userId == Ulid.Empty) return;
+
+        var creee = await NotificationService.NotifierAsync(
+            type:           type,
+            message:        $"Notification de test pour le type « {NotificationHelpers.Libelle(type)} ».",
+            destinataireId: userId,
+            titre:          "Test de configuration",
+            lien:           "/administration/notifications");
+
+        Snackbar.Add(creee is null
+            ? "Canal interne désactivé pour ce type : aucune notification créée."
+            : "Notification envoyée — regardez la cloche.",
+            creee is null ? Severity.Warning : Severity.Success);
+    }
+}
+
+

@@ -1,0 +1,164 @@
+@page "/axes/appuis/versements"
+@inject ISyntheseAxeService Synthese
+@inject IProjetService Projets
+@inject IReferentielService<Tiers> ServiceTiers
+@inject NavigationManager Nav
+
+<PageTitle>Versements d'appuis — Axes de dépenses</PageTitle>
+
+@*
+    Versements des appuis (cahier fonctionnel § 3.8.2) : historique par entité (sous-entités
+    comprises) et par projet, et appuis validés en attente de versement. Ces derniers font
+    aussi l'objet d'une alerte nocturne au-delà de 30 jours.
+*@
+
+<AutoriseSi DroitsRequis="Axe.Lecture">
+    <PageHeader Titre="Versements d'appuis" Description="Historique des versements et appuis en attente.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><a href="@RoutesAxes.Appuis" class="hover:underline">Appuis</a>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+    </AppCard>
+
+    @if (_exercice is not null)
+    {
+        <MudTabs Elevation="0" Rounded="true" TabPanelsClass="pt-4">
+            <MudTabPanel Text="Historique des versements">
+                <AppCard PaddingCorps="false">
+                    <TitreContent>
+                        <div class="flex flex-col lg:flex-row gap-3 w-full">
+                            <MudTextField T="string" @bind-Value="_filtre.Recherche" @bind-Value:after="() => ChargerAsync(1)" Placeholder="Pièce, engagement, objet…"
+                                          DebounceInterval="300" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" />
+                            <ChoixReference Label="Entité" Elements="_entites" Value="_filtre.TiersId" ValueChanged="v => FiltrerAsync(() => _filtre.TiersId = v)" />
+                            <ChoixReference Label="Projet" Elements="_projets" Value="_filtre.ProjetId" ValueChanged="v => FiltrerAsync(() => _filtre.ProjetId = v)" />
+                            <ChampDate Label="Du" Value="_filtre.Du" ValueChanged="v => FiltrerAsync(() => _filtre.Du = v)" />
+                            <ChampDate Label="Au" Value="_filtre.Au" ValueChanged="v => FiltrerAsync(() => _filtre.Au = v)" />
+                        </div>
+                    </TitreContent>
+                    <ChildContent>
+                        @if (_versements.Count == 0)
+                        {
+                            <EtatVide Icone="cash" Titre="Aucun versement" />
+                        }
+                        else
+                        {
+                            <TablePaiements Lignes="_versements" />
+                        }
+                    </ChildContent>
+                    <PiedContent>
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs text-gray-500">@_total versement(s) · total @Formats.Montant(_montant)</p>
+                            @if (_total > Taille)
+                            {
+                                <MudPagination Count="@((int)Math.Ceiling(_total / (double)Taille))" Selected="_page" SelectedChanged="ChargerAsync" Size="Size.Small" Color="Color.Primary" />
+                            }
+                        </div>
+                    </PiedContent>
+                </AppCard>
+            </MudTabPanel>
+
+            <MudTabPanel Text="@($"En attente de versement ({_enAttente.Count})")">
+                <AppCard PaddingCorps="false" Titre="Appuis en attente de versement"
+                         SousTitre="@($"Engagements d'appui validés et pas entièrement versés. Au-delà de {CalculsAxes.DelaiAppuiEnAttenteJours} jours, une alerte est envoyée chaque mois aux comptables et aux gestionnaires des appuis.")">
+                    @if (_enAttente.Count == 0)
+                    {
+                        <EtatVide Icone="check-circle" Titre="Aucun appui en attente" />
+                    }
+                    else
+                    {
+                        <MudSimpleTable Dense="true" Hover="true">
+                            <thead>
+                                <tr>
+                                    <th>Engagement</th><th>Entité</th><th>Projet</th><th>Validé le</th>
+                                    <th class="text-right">Montant</th><th class="text-right">Versé</th><th class="text-right">Reste à verser</th><th class="text-right">Attente</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var a in _enAttente)
+                                {
+                                    var jours = a.JoursAttente(DateTime.UtcNow);
+                                    <tr class="cursor-pointer" @onclick="@(() => Nav.NavigateTo($"/execution/engagements/{a.EngagementId}"))">
+                                        <td><span class="font-mono text-xs font-semibold">@a.Numero</span> — @a.Objet</td>
+                                        <td class="text-xs">@a.Entite</td>
+                                        <td class="font-mono text-xs">@a.Projet</td>
+                                        <td class="whitespace-nowrap">@a.DateValidation?.ToLocalTime().ToString("dd/MM/yyyy")</td>
+                                        <td class="tabular-nums text-right">@Formats.Montant(a.Montant)</td>
+                                        <td class="tabular-nums text-right">@Formats.Montant(a.Verse)</td>
+                                        <td class="tabular-nums text-right font-semibold">@Formats.Montant(a.Reste)</td>
+                                        <td class="text-right">
+                                            <AppBadge Variante="@(jours > CalculsAxes.DelaiAppuiEnAttenteJours ? "danger" : "neutral")" Petit="true">@jours j</AppBadge>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                </AppCard>
+            </MudTabPanel>
+        </MudTabs>
+    }
+</AutoriseSi>
+
+@code {
+    private const int Taille = 20;
+    private static readonly AxeDepense Axe = AxesDepense.Appuis;
+
+    /// <summary>Entité présélectionnée depuis la liste des appuis par entité.</summary>
+    [SupplyParameterFromQuery(Name = "entite")] public string? Entite { get; set; }
+
+    private readonly FiltreVersements _filtre = new();
+    private LigneExercice? _exercice;
+    private List<LignePaiement> _versements = new();
+    private List<LigneAppuiEnAttente> _enAttente = new();
+    private List<ElementListe> _entites = new(), _projets = new();
+    private int _total, _page = 1;
+    private decimal _montant;
+    private string? _entiteAppliquee;
+    private bool _parametresLus;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _entites = await ServiceTiers.ListerPourSelectionAsync(t => t.TypeTiers == TypeTiers.EntiteBeneficiaireAppuis);
+        _projets = await Projets.ListerPourSelectionAsync(Axe);
+    }
+
+    /// <summary>
+    /// La page reste la même d'une adresse à l'autre (menu, lien « versements » d'une entité) :
+    /// le filtre suit le paramètre ?entite= à chaque navigation, et seulement quand il change,
+    /// pour ne pas écraser un choix fait dans les filtres.
+    /// </summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_parametresLus && Entite == _entiteAppliquee) return;
+        _parametresLus = true;
+        _entiteAppliquee = Entite;
+        _filtre.TiersId = Ulid.TryParse(Entite, out var entite) ? entite : null;
+        await ChargerAsync(1);
+    }
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        if (e is null) return;
+        _enAttente = await Synthese.AppuisEnAttenteAsync(e.Id);
+        await ChargerAsync(1);
+    }
+
+    private async Task FiltrerAsync(Action changer)
+    {
+        changer();
+        await ChargerAsync(1);
+    }
+
+    private async Task ChargerAsync(int page)
+    {
+        _page = page;
+        if (_exercice is null) return;
+        _filtre.ExerciceId = _exercice.Id;
+        (_versements, _total, _montant) = await Synthese.VersementsAsync(_filtre, page, Taille);
+    }
+}

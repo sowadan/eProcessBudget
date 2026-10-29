@@ -1,0 +1,131 @@
+@page "/execution/cloture"
+@inject IClotureService Service
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ICompteSurChiffresService Chiffres
+@using eProcessBudget.Web.Features.Recettes.Commun
+
+<PageTitle>Clôture — Exécution budgétaire</PageTitle>
+
+@*
+    Clôture d'un exercice (§ 4.2) : aperçu des reliquats et des encours, des blocages
+    éventuels, puis clôture. Les encours deviennent des engagements reportés et les
+    reliquats des reports sur l'exercice suivant ; l'exécution rejoint l'historique.
+*@
+
+<AutoriseSi DroitsRequis="AccesExecution.Lecture">
+    <PageHeader Titre="Clôture d'exercice" Description="Reliquats et encours reportés sur l'exercice suivant.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><a href="/execution" class="hover:underline">Exécution budgétaire</a>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+    </AppCard>
+
+    @if (_resultat is not null)
+    {
+        <div class="mb-4">
+            <AppAlert Variante="success" Titre="Exercice clôturé">
+                @_resultat.NbEncours encours reporté(s) pour @Formats.Montant(_resultat.TotalEncours),
+                @_resultat.NbReliquats reliquat(s) pour @Formats.Montant(_resultat.TotalReliquats),
+                @_resultat.NbDotationsCreees dotation(s) créée(s) sur l'exercice suivant,
+                @_resultat.NbLignesHistorique ligne(s) d'historique.
+            </AppAlert>
+        </div>
+    }
+
+    @if (_apercu is not null)
+    {
+        @if (_apercu.Statut == StatutExercice.Cloture)
+        {
+            <AppCard><EtatVide Icone="check-circle" Titre="@($"L'exercice {_apercu.Annee} est clôturé")" Message="Ses reports figurent sur l'exercice suivant." /></AppCard>
+        }
+        else
+        {
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                <AppStatCard Label="Dotation totale" Valeur="@Formats.Montant(_apercu.Totaux.DotationTotale)" Icone="collection"
+                             SousTitre="@($"{_apercu.NbDotations} dotation(s)")" />
+                <AppStatCard Label="Payé" Valeur="@Formats.Montant(_apercu.Totaux.PaiementsTotal)" Icone="check-circle"
+                             SousTitre="@Formats.Taux(_apercu.Totaux.TauxConsommationYCReports)" CouleurFond="#DCFCE7" CouleurIcone="#15803D" />
+                <AppStatCard Label="Encours à reporter" Valeur="@Formats.Montant(_apercu.TotalEncours)" Icone="clock"
+                             SousTitre="@($"{_apercu.NbEncours} engagement(s) non soldé(s)")" CouleurFond="#FEF3C7" CouleurIcone="#B45309" />
+                <AppStatCard Label="Reliquats à reporter" Valeur="@Formats.Montant(_apercu.TotalReliquats)" Icone="arrow-right"
+                             SousTitre="crédits ni payés ni engagés" CouleurFond="#F3E8FF" CouleurIcone="#7E22CE" />
+            </div>
+
+            <CarteEquilibreTresorerie Equilibre="_equilibre" />
+
+            <AppCard Titre="@($"Clôture de l'exercice {_apercu.Annee}")"
+                     SousTitre="@(_apercu.AnneeSuivante is { } s ? $"Les reports iront sur l'exercice {s} ({LibellesParametrage.De(LibellesParametrage.StatutExercice, _apercu.StatutSuivant!.Value)})." : "")">
+                @if (_apercu.Blocages.Count > 0)
+                {
+                    <AppAlert Variante="warning" Titre="La clôture n'est pas encore possible">
+                        <ul class="list-disc pl-5 space-y-1">
+                            @foreach (var b in _apercu.Blocages) { <li>@b</li> }
+                        </ul>
+                    </AppAlert>
+                }
+                else
+                {
+                    <ul class="text-sm text-gray-700 list-disc pl-5 space-y-1 mb-4">
+                        <li>@_apercu.NbEncours engagement(s) non soldé(s) deviendront des encours reportés, pour @Formats.Montant(_apercu.TotalEncours).</li>
+                        <li>@Formats.Montant(_apercu.TotalReliquats) de crédits non engagés seront reportés en reliquats.</li>
+                        <li>@_apercu.NbDotationsACreer dotation(s) seront créées sur l'exercice suivant pour les recevoir (prévision initiale à 0).</li>
+                        <li>L'exécution rejoindra l'historique ; l'exercice et ses périodes seront clôturés. Cette opération est définitive.</li>
+                    </ul>
+                    @if (_peutCloturer)
+                    {
+                        <AppButton Variante="danger" Icone="lock-closed" EnChargement="_enCours" OnClick="CloturerAsync">Clôturer l'exercice @_apercu.Annee</AppButton>
+                    }
+                    else
+                    {
+                        <p class="text-xs text-gray-500">La clôture exige le droit « Clôturer un exercice ».</p>
+                    }
+                }
+            </AppCard>
+        }
+    }
+</AutoriseSi>
+
+@code {
+    private LigneExercice? _exercice;
+    private ApercuCloture? _apercu;
+    private EquilibreTresorerie? _equilibre;
+    private ResultatCloture? _resultat;
+    private bool _peutCloturer, _enCours;
+
+    protected override async Task OnInitializedAsync()
+        => _peutCloturer = await Droits.ADroitAsync(await UserContext.ObtenirUserIdAsync(), TypeDroit.ExerciceCloturer);
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        _resultat = null;
+        _apercu = e is null ? null : await Service.ApercuAsync(e.Id);
+        // Équilibre A à I (C.2.7) : visible aux lecteurs des recettes et de la consommation.
+        _equilibre = e is null ? null : await Chiffres.EquilibreAsync(e.Id);
+    }
+
+    private async Task CloturerAsync()
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, $"Clôturer l'exercice {_apercu!.Annee}" },
+            { x => x.Message, "Les reports seront créés et l'exercice ne pourra plus recevoir aucune saisie. Cette opération est définitive." },
+            { x => x.Libelle, "Clôturer" }, { x => x.Danger, true }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+
+        _enCours = true;
+        var (ok, erreur, resultat) = await Service.CloturerAsync(_exercice!.Id);
+        _enCours = false;
+        if (!ok) { Snackbar.Add(erreur!, Severity.Error); return; }
+        _resultat = resultat;
+        _apercu = await Service.ApercuAsync(_exercice.Id);
+        Snackbar.Add($"Exercice {_apercu?.Annee} clôturé.", Severity.Success);
+    }
+}

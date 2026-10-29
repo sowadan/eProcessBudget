@@ -1,0 +1,233 @@
+@using eProcessBudget.Infrastructure.Data
+@inject IUtilisateurService Utilisateurs
+@inject IProfilService Profils
+@inject IOrganismeService Organismes
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IAuthentificationService Authentification
+
+@*
+    Création (Id = Ulid.Empty) ou modification d'un compte, avec ses profils.
+
+    Administrateur plateforme : choisit l'organisme de rattachement, ou crée un compte
+    plateforme. Administrateur d'organisme : le compte est créé dans son organisme et
+    peut être rattaché à une structure. Le service revérifie tout.
+*@
+
+<MudDialog>
+    <DialogContent>
+        @if (_chargement)
+        {
+            <div class="flex justify-center py-10">
+                <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            </div>
+        }
+        else
+        {
+            <EditForm Model="Utilisateur" OnValidSubmit="EnregistrerAsync" id="form-utilisateur">
+                @if (!string.IsNullOrEmpty(_erreur))
+                {
+                    <div class="mb-4">
+                        <AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert>
+                    </div>
+                }
+
+                <div class="space-y-4">
+                    <MudTextField @bind-Value="Utilisateur.NomPrenoms" Label="Nom et prénoms"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="300" />
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <MudTextField @bind-Value="Utilisateur.Matricule" Label="Identifiant de connexion"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Disabled="@(!EstCreation)" MaxLength="100"
+                                      HelperText="Unique. Non modifiable après création." />
+
+                        <MudTextField @bind-Value="Utilisateur.Email" Label="E-mail"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="150"
+                                      HelperText="Sert à la réinitialisation du mot de passe." />
+                    </div>
+
+                    <MudTextField @bind-Value="Utilisateur.Fonction" Label="Fonction"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="150" />
+
+                    @if (_estPlateforme)
+                    {
+                        @if (EstCreation)
+                        {
+                            <MudSwitch T="bool" Value="Utilisateur.EstAdministrateurPlateforme"
+                                       ValueChanged="BasculerPlateforme"
+                                       Label="Compte plateforme (administration de l'instance, sans organisme)"
+                                       Color="Color.Warning" />
+
+                            @if (!Utilisateur.EstAdministrateurPlateforme)
+                            {
+                                <MudSelect T="Ulid?" @bind-Value="Utilisateur.OrganismeId" Label="Organisme"
+                                           Variant="Variant.Outlined" Margin="Margin.Dense">
+                                    @foreach (var o in _organismes)
+                                    {
+                                        <MudSelectItem T="Ulid?" Value="@o.Id">@o.Libelle</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            }
+                        }
+                        else
+                        {
+                            <InfoChamp Label="Rattachement"
+                                       Valeur="@(Utilisateur.EstAdministrateurPlateforme ? "Compte plateforme" : _organismes.FirstOrDefault(o => o.Id == Utilisateur.OrganismeId)?.Libelle)" />
+                        }
+                    }
+                    else
+                    {
+                        <MudSelect T="Ulid?" @bind-Value="Utilisateur.StructureId" Label="Structure de rattachement"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                                   HelperText="@(_structures.Count == 0 ? "Aucune structure : elles se créent dans le Paramétrage." : null)">
+                            @foreach (var s in _structures)
+                            {
+                                <MudSelectItem T="Ulid?" Value="@s.Id">@s.Libelle</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+
+                    @if (EstCreation)
+                    {
+                        <MudTextField @bind-Value="_motDePasse" Label="Mot de passe initial (facultatif)"
+                                      InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      MaxLength="128" HelperText="@($"Sinon, l'utilisateur passera par « Mot de passe oublié ». {Authentification.DescriptionPolitique}")"
+                                      UserAttributes="@(new() { ["autocomplete"] = "new-password" })" />
+                    }
+
+                    <MudSwitch @bind-Value="Utilisateur.EstActif" Label="Compte actif" Color="Color.Primary" />
+
+                    <!-- ═══ Profils -->
+                    <div>
+                        <p class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2 pb-2 border-b border-gray-100">
+                            Profils
+                        </p>
+
+                        @if (!_peutAttribuer)
+                        {
+                            <p class="text-xs text-gray-500 mb-2">
+                                Le droit « attribution de profils » est nécessaire pour modifier cette liste.
+                            </p>
+                        }
+
+                        @if (ProfilsProposes.Count == 0)
+                        {
+                            <p class="text-sm text-gray-400">Aucun profil défini.</p>
+                        }
+                        else
+                        {
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                                @foreach (var profil in ProfilsProposes)
+                                {
+                                    <MudCheckBox T="bool"
+                                                 Value="@_selection.Contains(profil.Id)"
+                                                 ValueChanged="@(v => Basculer(profil.Id, v))"
+                                                 Label="@(profil.EstActif ? profil.Libelle : $"{profil.Libelle} (inactif)")"
+                                                 Disabled="@(!_peutAttribuer)"
+                                                 Color="Color.Primary" Dense="true" />
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </EditForm>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="Annuler">Annuler</AppButton>
+        <AppButton Type="submit" Icone="check-circle" EnChargement="_enregistrement" Desactive="_chargement"
+                   AttributsSupplementaires="@(new Dictionary<string, object> { { "form", "form-utilisateur" } })">
+            Enregistrer
+        </AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Utilisateur Utilisateur { get; set; } = new();
+
+    private bool EstCreation => Utilisateur.Id == Ulid.Empty;
+
+    private List<Profil> _profils = new();
+    private List<ElementListe> _organismes = new();
+    private List<ElementListe> _structures = new();
+    private readonly HashSet<Ulid> _selection = new();
+    private bool _peutAttribuer;
+    private bool _estPlateforme;
+    private string? _motDePasse;
+
+    private bool _chargement = true;
+    private bool _enregistrement;
+    private string? _erreur;
+
+    /// <summary>Le profil Administrateur plateforme n'est proposé que pour un compte plateforme.</summary>
+    private List<Profil> ProfilsProposes => _profils
+        .Where(p => Utilisateur.EstAdministrateurPlateforme || p.Code != SeedService.CodeProfilAdministrateurPlateforme)
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var userId = await UserContext.ObtenirUserIdAsync();
+        _peutAttribuer = await Droits.ADroitAsync(userId, TypeDroit.ProfilAttribution);
+        _estPlateforme = await UserContext.EstAdministrateurPlateformeAsync();
+
+        _profils = await Profils.ListerAsync();
+        if (_estPlateforme) _organismes = await Organismes.ListerPourSelectionAsync();
+        else _structures = await Utilisateurs.ListerStructuresAsync();
+
+        if (!EstCreation)
+            foreach (var id in await Utilisateurs.ObtenirProfilsAsync(Utilisateur.Id))
+                _selection.Add(id);
+
+        _chargement = false;
+    }
+
+    private void Basculer(Ulid profilId, bool coche)
+    {
+        if (coche) _selection.Add(profilId);
+        else       _selection.Remove(profilId);
+    }
+
+    private void BasculerPlateforme(bool plateforme)
+    {
+        Utilisateur.EstAdministrateurPlateforme = plateforme;
+        if (plateforme) Utilisateur.OrganismeId = null;
+
+        // Retire de la sélection les profils qui ne sont plus proposés.
+        _selection.IntersectWith(ProfilsProposes.Select(p => p.Id));
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        _erreur = null;
+
+        // Sans le droit d'attribution, on ne touche pas aux profils (null = inchangés).
+        var profils = _peutAttribuer ? _selection.ToList() : null;
+
+        var (ok, erreur) = EstCreation
+            ? await CreerAsync(profils)
+            : await Utilisateurs.ModifierAsync(Utilisateur, profils);
+
+        _enregistrement = false;
+
+        if (!ok)
+        {
+            _erreur = erreur;
+            return;
+        }
+
+        Dialog.Close(DialogResult.Ok(Utilisateur));
+    }
+
+    private async Task<(bool, string?)> CreerAsync(List<Ulid>? profils)
+    {
+        var (ok, erreur, _) = await Utilisateurs.CreerAsync(Utilisateur, profils, _motDePasse);
+        if (ok) _motDePasse = null;
+        return (ok, erreur);
+    }
+
+    private void Annuler() => Dialog.Cancel();
+}

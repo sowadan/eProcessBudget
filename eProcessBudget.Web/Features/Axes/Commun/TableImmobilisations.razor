@@ -1,0 +1,46 @@
+@* Biens inventoriés : code, désignation, site, compte, acquisition, état. *@
+
+<MudSimpleTable Dense="true" Hover="true">
+    <thead>
+        <tr>
+            <th>Bien</th><th>Site · service</th><th>Projet</th><th>Compte</th><th>Acquisition</th>
+            <th class="text-right">Valeur</th><th>État</th><th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var i in Lignes)
+        {
+            <tr class="@(i.Etat == EtatImmobilisation.CedeReforme ? "text-gray-400" : "")">
+                <td><span class="font-mono text-xs font-semibold">@i.Code</span> — @i.Designation</td>
+                <td class="text-xs">@RequetesAffichage.Joindre(i.Site, i.Structure)</td>
+                <td class="font-mono text-xs">@i.Projet</td>
+                <td class="text-xs text-gray-600">@i.Compte</td>
+                <td class="whitespace-nowrap">@i.DateAcquisition.ToString("dd/MM/yyyy")</td>
+                <td class="tabular-nums text-right">@Formats.Montant(i.ValeurAcquisition)</td>
+                <td><AppBadge Variante="@VarianteEtat(i.Etat)" Petit="true">@LibellesAxes.EtatImmobilisation[i.Etat]</AppBadge></td>
+                <td class="text-right whitespace-nowrap">
+                    @if (PeutSaisir)
+                    {
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => OnModifier.InvokeAsync(i)" />
+                        <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => OnSupprimer.InvokeAsync(i)" />
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<LigneImmobilisation> Lignes { get; set; } = [];
+    [Parameter] public bool PeutSaisir { get; set; }
+    [Parameter] public EventCallback<LigneImmobilisation> OnModifier { get; set; }
+    [Parameter] public EventCallback<LigneImmobilisation> OnSupprimer { get; set; }
+
+    private static string VarianteEtat(EtatImmobilisation e) => e switch
+    {
+        EtatImmobilisation.Bon => "success",
+        EtatImmobilisation.Moyen => "warning",
+        EtatImmobilisation.HorsService => "danger",
+        _ => "neutral"
+    };
+}

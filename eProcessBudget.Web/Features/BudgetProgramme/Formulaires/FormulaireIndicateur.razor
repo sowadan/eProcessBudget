@@ -1,0 +1,74 @@
+@inherits FormulaireBase<Indicateur>
+@inject IReferentielService<Programme> ServiceProgramme
+@inject IReferentielService<ActionProgramme> ServiceAction
+@inject IReferentielService<UniteMesure> ServiceUnite
+@inject IReferentielService<ListeValeur> ServiceListe
+@inject IReferentielService<Structure> ServiceStructure
+
+@*
+    Indicateur de performance (§ 3.3.3) : niveau programme, action ou résultat immédiat,
+    unité, sens d'évolution, valeur et année de référence, source de vérification,
+    périodicité, structure responsable. Les cibles annuelles se saisissent à part (par cycle).
+*@
+
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <MudTextField @bind-Value="Element.Code" Label="Code" MaxLength="20" Required="true" RequiredError="Code : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <div class="sm:col-span-2">
+        <ChoixEnum TEnum="NiveauIndicateur" Label="Niveau" Libelles="LibellesBudgetProgramme.Niveau" @bind-Value="Element.Niveau" />
+    </div>
+    <MudTextField @bind-Value="Element.Libelle" Label="Libellé" MaxLength="300" Required="true" RequiredError="Libellé : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-3" />
+
+    @if (Element.Niveau == NiveauIndicateur.Programme)
+    {
+        <div class="sm:col-span-3">
+            <ChoixReference Label="Programme" Elements="_programmes" Obligatoire="true" Value="Element.ProgrammeId" ValueChanged="v => Element.ProgrammeId = v" />
+        </div>
+    }
+    else
+    {
+        <div class="sm:col-span-3">
+            <ChoixReference Label="Action" Elements="_actions" Obligatoire="true" Value="Element.ActionId" ValueChanged="v => Element.ActionId = v" />
+        </div>
+    }
+
+    <ChoixReference Label="Unité de mesure" Elements="_unites" Obligatoire="true"
+                    Value="Element.UniteMesureId" ValueChanged="v => Element.UniteMesureId = v ?? Ulid.Empty" />
+    <div class="sm:col-span-2">
+        <ChoixEnum TEnum="SensEvolution" Label="Sens d'évolution" Libelles="LibellesBudgetProgramme.Sens" @bind-Value="Element.SensEvolution" />
+    </div>
+
+    <MudNumericField T="int?" @bind-Value="Element.AnneeReference" Label="Année de référence" Min="1990" Max="2100"
+                     Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudNumericField T="decimal?" @bind-Value="Element.ValeurReference" Label="Valeur de référence"
+                     Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <ChoixReference Label="Périodicité de mesure" Elements="_periodicites" Value="Element.PeriodiciteId" ValueChanged="v => Element.PeriodiciteId = v" />
+
+    <div class="sm:col-span-2">
+        <ChoixReference Label="Source de vérification" Elements="_sources" Value="Element.SourceVerificationId" ValueChanged="v => Element.SourceVerificationId = v" />
+    </div>
+    <ChoixReference Label="Structure responsable" Elements="_structures" Value="Element.StructureId" ValueChanged="v => Element.StructureId = v" />
+
+    <MudTextField @bind-Value="Element.ModeCalcul" Label="Mode de calcul" MaxLength="1000" Lines="2"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-3" />
+</div>
+
+@code {
+    private List<ElementListe> _programmes = new();
+    private List<ElementListe> _actions = new();
+    private List<ElementListe> _unites = new();
+    private List<ElementListe> _sources = new();
+    private List<ElementListe> _periodicites = new();
+    private List<ElementListe> _structures = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _programmes = await ServiceProgramme.ListerPourSelectionAsync();
+        _actions = await ServiceAction.ListerPourSelectionAsync();
+        _unites = await ServiceUnite.ListerPourSelectionAsync();
+        _sources = await ServiceListe.ListerPourSelectionAsync(l => l.Categorie == CategoriesListeValeur.SourceVerification);
+        _periodicites = await ServiceListe.ListerPourSelectionAsync(l => l.Categorie == CategoriesListeValeur.Periodicite);
+        _structures = await ServiceStructure.ListerPourSelectionAsync();
+    }
+}

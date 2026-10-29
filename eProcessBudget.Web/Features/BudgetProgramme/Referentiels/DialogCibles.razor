@@ -1,0 +1,67 @@
+@inject IIndicateurService Indicateurs
+
+@* Cibles annuelles d'un indicateur pour un cycle : une valeur par année N, N+1, N+2 (§ 3.3.3). *@
+
+<MudDialog>
+    <DialogContent>
+        <p class="text-sm font-medium text-gray-700 mb-3">@Libelle</p>
+        <SelecteurCycle Value="_cycle" ValueChanged="ChangerCycleAsync" />
+
+        @if (_cycle is not null)
+        {
+            @if (_erreur is not null)
+            {
+                <div class="mt-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+            }
+            <div class="grid grid-cols-3 gap-3 mt-4">
+                @foreach (var annee in Annees)
+                {
+                    <MudNumericField T="decimal?" Value="_cibles.GetValueOrDefault(annee)" ValueChanged="v => _cibles[annee] = v"
+                                     Label="@annee.ToString()" Disabled="!Modifiable" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                }
+            </div>
+            @if (!Modifiable)
+            {
+                <p class="text-xs text-gray-500 mt-2">Ce cycle est validé ou archivé : ses cibles ne se modifient plus.</p>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Fermer</AppButton>
+        @if (Modifiable)
+        {
+            <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Ulid IndicateurId { get; set; }
+    [Parameter] public string Libelle { get; set; } = "";
+
+    private LigneCycle? _cycle;
+    private Dictionary<int, decimal?> _cibles = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    private bool Modifiable => _cycle?.Statut == StatutCycle.Brouillon;
+    private IEnumerable<int> Annees => _cycle is null ? [] : Enumerable.Range(_cycle.AnneeBase, _cycle.AnneeFin - _cycle.AnneeBase + 1);
+
+    private async Task ChangerCycleAsync(LigneCycle? cycle)
+    {
+        _cycle = cycle;
+        _erreur = null;
+        _cibles = cycle is null ? new()
+            : (await Indicateurs.ObtenirCiblesAsync(IndicateurId, cycle.Id)).ToDictionary(c => c.Key, c => (decimal?)c.Value);
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        var cibles = Annees.ToDictionary(a => a, a => _cibles.GetValueOrDefault(a));
+        (var ok, _erreur) = await Indicateurs.DefinirCiblesAsync(IndicateurId, _cycle!.Id, cibles);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

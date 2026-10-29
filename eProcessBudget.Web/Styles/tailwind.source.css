@@ -1,0 +1,4 @@
+/* Source de wwwroot/css/tailwind.min.css : npm run css (voir docs/07-composants-ui.md). */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

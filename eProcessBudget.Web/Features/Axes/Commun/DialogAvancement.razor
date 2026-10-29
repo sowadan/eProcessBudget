@@ -1,0 +1,87 @@
+@inject IAvancementService Service
+@inject IProjetService Projets
+@inject IContratService Contrats
+@inject IExerciceService Exercices
+@inject IReferentielService<TypeTravaux> ServiceTypeTravaux
+
+@*
+    Avancement physique d'une opération sur un mois : kilomètres entretenus et/ou taux
+    d'avancement, par contrat de travaux et type de travaux (C.2.11). Sans type précisé,
+    celui de l'opération s'applique.
+*@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="sm:col-span-2">
+                <ChoixReference Label="Opération de travaux" Elements="_projets" Obligatoire="true" Disabled="ProjetFixe"
+                                Value="Saisie.ProjetId" ValueChanged="ChangerProjetAsync" />
+            </div>
+            <MudSelect T="Ulid?" @bind-Value="Saisie.PeriodeId" Label="Mois" Variant="Variant.Outlined" Margin="Margin.Dense"
+                       ToStringFunc="@(id => _mois.FirstOrDefault(m => m.Id == id) is { } m ? LibelleMois(m) : "")">
+                @foreach (var m in _mois)
+                {
+                    <MudSelectItem T="Ulid?" Value="@m.Id" Disabled="m.EstCloturee">@LibelleMois(m)@(m.EstCloturee ? " (clos)" : "")</MudSelectItem>
+                }
+            </MudSelect>
+            <ChoixReference Label="Type de travaux (par défaut, celui de l'opération)" Elements="_typesTravaux"
+                            Value="Saisie.TypeTravauxId" ValueChanged="v => Saisie.TypeTravauxId = v" />
+            <div class="sm:col-span-2">
+                <ChoixReference Label="Contrat de travaux (facultatif)" Elements="_contrats" Value="Saisie.ContratId" ValueChanged="v => Saisie.ContratId = v" />
+            </div>
+            <MudNumericField T="decimal?" @bind-Value="Saisie.KmRealises" Label="Kilomètres entretenus" Min="0" Format="0.####" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudNumericField T="decimal?" @bind-Value="Saisie.TauxAvancement" Label="Taux d'avancement (%)" Min="0" Max="100" Format="0.##" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <div class="sm:col-span-2">
+                <MudTextField @bind-Value="Saisie.Commentaire" Label="Commentaire" Lines="2" MaxLength="1000" Counter="1000" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public SaisieAvancement Saisie { get; set; } = new();
+    [Parameter, EditorRequired] public Ulid ExerciceId { get; set; }
+    [Parameter] public bool ProjetFixe { get; set; }
+
+    private List<ElementListe> _projets = new(), _contrats = new(), _typesTravaux = new();
+    private List<LignePeriode> _mois = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    private static string LibelleMois(LignePeriode m) => m.DateDebut.ToString("MMMM yyyy", Formats.Francais);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _projets = await Projets.ListerOperationsTravauxAsync();
+        _typesTravaux = await ServiceTypeTravaux.ListerPourSelectionAsync(t => !t.EstPrestationControle);
+        _mois = (await Exercices.ListerPeriodesAsync(ExerciceId)).Where(p => p.Type == TypePeriode.Mois).ToList();
+        await ChargerContratsAsync();
+    }
+
+    private async Task ChangerProjetAsync(Ulid? projetId)
+    {
+        Saisie.ProjetId = projetId;
+        Saisie.ContratId = null;
+        await ChargerContratsAsync();
+    }
+
+    private async Task ChargerContratsAsync()
+        => _contrats = Saisie.ProjetId is { } id ? await Contrats.ListerPourSelectionAsync(id, TypeContrat.Travaux) : new();
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.EnregistrerAsync(Saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

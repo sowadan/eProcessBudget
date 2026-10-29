@@ -1,0 +1,48 @@
+@inject IPrevisionRecetteService Previsions
+@inject IEmissionRecetteService Service
+
+@* Facture émise (titre de recette) : la prévision facturée, la date d'émission (exercice ouvert, mois non clos), le montant et le numéro. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="sm:col-span-2">
+                <ChoixReference Label="Prévision (ligne, nature, site)" Elements="_previsions" Obligatoire="true"
+                                Value="Saisie.PrevisionRecetteId" ValueChanged="v => Saisie.PrevisionRecetteId = v" />
+            </div>
+            <ChampDate Label="Date d'émission" Obligatoire="true" @bind-Value="Saisie.Date" />
+            <MudNumericField T="decimal" @bind-Value="Saisie.Montant" Label="Montant facturé" Min="0" Format="N2" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <div class="sm:col-span-2">
+                <MudTextField @bind-Value="Saisie.Reference" Label="Numéro de la facture ou du titre" MaxLength="100" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public SaisieEmission Saisie { get; set; } = new();
+    [Parameter, EditorRequired] public Ulid ExerciceId { get; set; }
+
+    private List<ElementListe> _previsions = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync() => _previsions = await Previsions.RechercherAsync(ExerciceId);
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.EnregistrerAsync(Saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

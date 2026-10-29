@@ -1,0 +1,83 @@
+@inject ITauxChangeService Taux
+@inject IReferentielService<Devise> ServiceDevise
+@inject ISnackbar Snackbar
+
+@* Historique des taux de change d'une devise : 1 unité de la devise = taux unités de la devise de référence. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_peutGerer)
+        {
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start mb-4">
+                <MudDatePicker @bind-Date="_date" Label="En vigueur au" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudNumericField T="decimal" @bind-Value="_taux" Label="@($"1 {Devise.CodeIso} =")" Min="0" Format="N4"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <AppButton Icone="plus" EnChargement="_ajout" OnClick="AjouterAsync">Ajouter</AppButton>
+            </div>
+        }
+
+        @if (_lignes.Count == 0)
+        {
+            <p class="text-sm text-gray-500">Aucun taux enregistré.</p>
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>En vigueur au</th><th style="text-align:right">Taux</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var l in _lignes)
+                    {
+                        <tr>
+                            <td class="tabular-nums">@l.DateEffet.ToString("dd/MM/yyyy")</td>
+                            <td class="tabular-nums" style="text-align:right">@l.Taux.ToString("N4")</td>
+                            <td style="text-align:right">
+                                @if (_peutGerer)
+                                {
+                                    <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete"
+                                                   OnClick="() => SupprimerAsync(l.Id)" />
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Close()">Fermer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Devise Devise { get; set; } = new();
+
+    private List<LigneTauxChange> _lignes = new();
+    private bool _peutGerer;
+    private bool _ajout;
+    private DateTime? _date = DateTime.Today;
+    private decimal _taux;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutGerer = await ServiceDevise.PeutGererAsync();
+        _lignes = await Taux.ListerAsync(Devise.Id);
+    }
+
+    private async Task AjouterAsync()
+    {
+        if (_date is null) return;
+        _ajout = true;
+        var (ok, erreur) = await Taux.AjouterAsync(Devise.Id, DateOnly.FromDateTime(_date.Value), _taux);
+        _ajout = false;
+        if (!ok) { Snackbar.Add(erreur!, Severity.Error); return; }
+        _lignes = await Taux.ListerAsync(Devise.Id);
+    }
+
+    private async Task SupprimerAsync(Ulid id)
+    {
+        var (ok, erreur) = await Taux.SupprimerAsync(id);
+        if (!ok) { Snackbar.Add(erreur!, Severity.Error); return; }
+        _lignes = await Taux.ListerAsync(Devise.Id);
+    }
+}

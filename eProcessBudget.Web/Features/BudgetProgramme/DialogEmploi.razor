@@ -1,0 +1,62 @@
+@inject IProgrammationService Service
+@inject IReferentielService<Programme> ServiceProgramme
+@inject IReferentielService<CategorieEmploi> ServiceCategorie
+
+@* Effectifs programmés d'un programme pour une catégorie d'emplois, par année du cycle. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <ChoixReference Label="Programme" Elements="_programmes" Obligatoire="true" Disabled="@(Ligne is not null)"
+                            Value="_programmeId" ValueChanged="v => _programmeId = v" />
+            <ChoixReference Label="Catégorie d'emplois" Elements="_categories" Obligatoire="true" Disabled="@(Ligne is not null)"
+                            Value="_categorieId" ValueChanged="v => _categorieId = v" />
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            @foreach (var a in _annees)
+            {
+                <MudNumericField T="int" Value="_effectifs[a]" ValueChanged="v => _effectifs[a] = v" Label="@a.ToString()" Min="0"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public LigneCycle Cycle { get; set; } = null!;
+    [Parameter] public LigneEmploi? Ligne { get; set; }
+
+    private int[] _annees = [];
+    private readonly Dictionary<int, int> _effectifs = new();
+    private Ulid? _programmeId, _categorieId;
+    private List<ElementListe> _programmes = new(), _categories = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _annees = Enumerable.Range(Cycle.AnneeReference, Cycle.AnneeFin - Cycle.AnneeReference + 1).ToArray();
+        foreach (var a in _annees) _effectifs[a] = Ligne?.Effectifs.GetValueOrDefault(a) ?? 0;
+        (_programmeId, _categorieId) = (Ligne?.ProgrammeId, Ligne?.CategorieEmploiId);
+        _programmes = await ServiceProgramme.ListerPourSelectionAsync();
+        _categories = await ServiceCategorie.ListerPourSelectionAsync();
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        if (_programmeId is null || _categorieId is null) { _erreur = "Choisissez le programme et la catégorie."; return; }
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.EnregistrerEmploiAsync(Cycle.Id, _programmeId.Value, _categorieId.Value, _effectifs);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

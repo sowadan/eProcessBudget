@@ -1,0 +1,21 @@
+@page "/parametrage/rubriques"
+
+<PageTitle>Paramétrage</PageTitle>
+
+@* Référentiel Rubrique : colonnes de la liste. Tout le reste (droits, filtres, saisie, Excel) vient de PageReferentiel. *@
+
+<PageReferentiel T="Rubrique" Formulaire="typeof(FormulaireRubrique)"
+                 Description="Chapitres du budget, rattachés à un axe. Vue d'ensemble : Nomenclature budgétaire.">
+    <EnTetes>
+        <MudTh>Axe</MudTh>
+        <MudTh>Code</MudTh>
+        <MudTh>Repère</MudTh>
+        <MudTh>Libellé</MudTh>
+    </EnTetes>
+    <Colonnes>
+        <MudTd DataLabel="Axe"><span class="text-sm text-gray-500">@context.Axe.Code</span></MudTd>
+        <MudTd DataLabel="Code"><span class="font-mono text-xs font-semibold text-gray-800">@context.Code</span></MudTd>
+        <MudTd DataLabel="Repère"><span class="text-sm text-gray-500">@context.Note</span></MudTd>
+        <MudTd DataLabel="Libellé"><span class="text-sm text-gray-700">@context.Libelle</span></MudTd>
+    </Colonnes>
+</PageReferentiel>

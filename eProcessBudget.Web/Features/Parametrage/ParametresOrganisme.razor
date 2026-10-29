@@ -1,0 +1,185 @@
+@page "/parametrage/organisme"
+@inject IParametresOrganismeService Parametres
+@inject IReferentielService<Devise> ServiceDevise
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Organisme — Paramétrage</PageTitle>
+
+@*
+    Paramètres de l'organisme (cahier fonctionnel § 3.2.2) : identité (en-tête des écrans
+    et des rapports), logo, devise de référence, paramètres techniques et éléments des
+    exports. Le code et le statut de l'organisme relèvent de l'Administrateur plateforme.
+*@
+
+<AutoriseSi DroitsRequis="new[] { TypeDroit.ParametrageLire, TypeDroit.ParametrageGerer }">
+    <PageHeader Titre="Organisme" Description="Identité, devise, paramètres techniques et éléments des exports.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span>
+            <a href="/parametrage" class="hover:underline">Paramétrage</a>
+        </BreadcrumbContent>
+        <ActionsContent>
+            @if (_peutGerer)
+            {
+                <AppButton Variante="outline" EnChargement="_completion" OnClick="CompleterAsync">Compléter les données initiales</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    @if (_saisie is null)
+    {
+        <div class="flex justify-center py-16"><MudProgressCircular Indeterminate="true" Color="Color.Primary" /></div>
+    }
+    else
+    {
+        <EditForm Model="_saisie" OnValidSubmit="EnregistrerAsync">
+            @if (_erreur is not null)
+            {
+                <div class="mb-4"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+            }
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <AppCard Titre="Identité" SousTitre="@($"Code : {_saisie.Code}")" ClasseSup="lg:col-span-2">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <MudTextField @bind-Value="_saisie.RaisonSociale" Label="Raison sociale" MaxLength="200" Required="true"
+                                      Disabled="!_peutGerer" Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+                        <MudTextField @bind-Value="_saisie.Sigle" Label="Sigle" MaxLength="30" Disabled="!_peutGerer" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        <MudTextField @bind-Value="_saisie.Telephone" Label="Téléphone" MaxLength="30" Disabled="!_peutGerer" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        <MudTextField @bind-Value="_saisie.Email" Label="E-mail" MaxLength="150" Disabled="!_peutGerer" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        <MudTextField @bind-Value="_saisie.Adresse" Label="Adresse" MaxLength="300" Disabled="!_peutGerer" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        <MudTextField @bind-Value="_saisie.TutelleTechnique" Label="Tutelle technique" MaxLength="200" Disabled="!_peutGerer" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        <MudTextField @bind-Value="_saisie.TutelleFinanciere" Label="Tutelle financière" MaxLength="200" Disabled="!_peutGerer" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </div>
+                </AppCard>
+
+                <AppCard Titre="Logo" SousTitre="PNG ou JPEG, 512 Ko au plus. Repris dans l'en-tête des rapports.">
+                    <div class="flex flex-col items-center gap-3">
+                        @if (_saisie.AUnLogo)
+                        {
+                            <img src="@($"/parametrage/logo?v={_versionLogo}")" alt="Logo de l'organisme" class="max-h-28 max-w-full object-contain" />
+                        }
+                        else
+                        {
+                            <p class="text-sm text-gray-400 py-6">Aucun logo</p>
+                        }
+                        @if (_peutGerer)
+                        {
+                            <div class="flex gap-2">
+                                <MudFileUpload T="IBrowserFile" Accept=".png,.jpg,.jpeg" FilesChanged="DefinirLogoAsync" MaximumFileCount="1">
+                                    <CustomContent Context="envoi">
+                                        <AppButton Variante="outline" EnChargement="_envoiLogo" OnClick="@(() => envoi.OpenFilePickerAsync())">Choisir…</AppButton>
+                                    </CustomContent>
+                                </MudFileUpload>
+                                @if (_saisie.AUnLogo)
+                                {
+                                    <AppButton Variante="ghost" OnClick="SupprimerLogoAsync">Retirer</AppButton>
+                                }
+                            </div>
+                        }
+                    </div>
+                </AppCard>
+
+                <AppCard Titre="Devise et paramètres techniques" ClasseSup="lg:col-span-2">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div class="sm:col-span-2">
+                            <ChoixReference Label="Devise de référence" Elements="_devises" Disabled="!_peutGerer"
+                                            Value="_saisie.DeviseReferenceId" ValueChanged="v => _saisie.DeviseReferenceId = v" />
+                        </div>
+                        <MudNumericField T="int" @bind-Value="_saisie.NbDecimales" Label="Décimales" Min="0" Max="4" Disabled="!_peutGerer" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        <MudNumericField T="int" @bind-Value="_saisie.DureeSessionMinutes" Label="Session (minutes d'inactivité)" Min="5" Max="1440" Disabled="!_peutGerer" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        <MudNumericField T="int" @bind-Value="_saisie.NbTentativesMax" Label="Tentatives avant blocage" Min="1" Max="20" Disabled="!_peutGerer" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        <MudNumericField T="int" @bind-Value="_saisie.TaillePagination" Label="Lignes par page" Min="10" Max="200" Disabled="!_peutGerer" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        <MudNumericField T="int" @bind-Value="_saisie.RetentionJournauxMois" Label="Rétention des journaux (mois)" Min="12" Max="120" Disabled="!_peutGerer" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                         HelperText="12 mois minimum (§ 5.2)." />
+                    </div>
+                </AppCard>
+
+                <AppCard Titre="Exports (PDF, Excel)">
+                    <div class="space-y-4">
+                        <MudTextField @bind-Value="_saisie.EnteteRapport" Label="En-tête des rapports" MaxLength="500" Lines="3" Disabled="!_peutGerer" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        <MudTextField @bind-Value="_saisie.PiedPageRapport" Label="Pied de page des rapports" MaxLength="500" Lines="2" Disabled="!_peutGerer" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </div>
+                </AppCard>
+            </div>
+
+            @if (_peutGerer)
+            {
+                <div class="flex justify-end mt-6">
+                    <AppButton Type="submit" Icone="check-circle" EnChargement="_enregistrement">Enregistrer</AppButton>
+                </div>
+            }
+        </EditForm>
+    }
+</AutoriseSi>
+
+@code {
+    private SaisieParametresOrganisme? _saisie;
+    private List<ElementListe> _devises = new();
+    private bool _peutGerer;
+    private bool _enregistrement;
+    private bool _envoiLogo;
+    private bool _completion;
+    private string? _erreur;
+    private int _versionLogo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutGerer = await ServiceDevise.PeutGererAsync();
+        _devises = await ServiceDevise.ListerPourSelectionAsync();
+        _saisie = await Parametres.ObtenirAsync();
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Parametres.EnregistrerAsync(_saisie!);
+        _enregistrement = false;
+        if (ok) Snackbar.Add("Paramètres enregistrés. Durée de session et tentatives s'appliquent aux prochaines connexions.", Severity.Success);
+    }
+
+    private async Task DefinirLogoAsync(IBrowserFile? fichier)
+    {
+        if (fichier is null) return;
+        if (fichier.Size > ParametresOrganismeService.TailleLogoMax)
+        {
+            Snackbar.Add("Le logo ne doit pas dépasser 512 Ko.", Severity.Error);
+            return;
+        }
+
+        _envoiLogo = true;
+        await using var flux = fichier.OpenReadStream(ParametresOrganismeService.TailleLogoMax);
+        var (ok, erreur) = await Parametres.DefinirLogoAsync(flux, fichier.Name);
+        _envoiLogo = false;
+
+        if (!ok) { Snackbar.Add(erreur!, Severity.Error); return; }
+        _saisie!.AUnLogo = true;
+        _versionLogo++;
+        Snackbar.Add("Logo enregistré.", Severity.Success);
+    }
+
+    private async Task SupprimerLogoAsync()
+    {
+        var (ok, erreur) = await Parametres.SupprimerLogoAsync();
+        if (!ok) { Snackbar.Add(erreur!, Severity.Error); return; }
+        _saisie!.AUnLogo = false;
+    }
+
+    private async Task CompleterAsync()
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, "Compléter les données initiales" },
+            { x => x.Message, "Ajoute les éléments de référence manquants (§ 3.7) : listes de valeurs, structures, catégories d'emplois, risques, types de travaux, natures de recettes… Rien d'existant n'est modifié." },
+            { x => x.Libelle, "Compléter" }
+        };
+        var dialog = await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres);
+        if (await dialog.Result is not { Canceled: false }) return;
+
+        _completion = true;
+        var (ok, erreur, nb) = await Parametres.CompleterDonneesInitialesAsync();
+        _completion = false;
+        Snackbar.Add(ok ? (nb == 0 ? "Rien à ajouter : les données initiales sont complètes." : $"{nb} élément(s) ajouté(s).") : erreur!,
+            ok ? Severity.Success : Severity.Error);
+        if (ok) _devises = await ServiceDevise.ListerPourSelectionAsync();
+    }
+}

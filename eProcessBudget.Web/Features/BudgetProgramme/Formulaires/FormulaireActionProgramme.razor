@@ -1,0 +1,33 @@
+@inherits FormulaireBase<ActionProgramme>
+@inject IReferentielService<Programme> ServiceProgramme
+@inject IReferentielService<Structure> ServiceStructure
+
+@* Action : programme de rattachement, code (1.1…), objectif spécifique, structure responsable. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div class="sm:col-span-2">
+        <ChoixReference Label="Programme" Elements="_programmes" Obligatoire="true"
+                        Value="Element.ProgrammeId" ValueChanged="v => Element.ProgrammeId = v ?? Ulid.Empty" />
+    </div>
+    <MudTextField @bind-Value="Element.Code" Label="Code" MaxLength="10" Required="true" RequiredError="Code : obligatoire."
+                  HelperText="1.1, 1.2…" Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Libelle" Label="Libellé" MaxLength="250" Required="true" RequiredError="Libellé : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-3" />
+    <MudTextField @bind-Value="Element.ObjectifSpecifique" Label="Objectif spécifique (opérationnel)" MaxLength="500" Lines="2" Required="true"
+                  RequiredError="Objectif spécifique : obligatoire." Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-3" />
+    <div class="sm:col-span-2">
+        <ChoixReference Label="Structure responsable" Elements="_structures" Value="Element.StructureId" ValueChanged="v => Element.StructureId = v" />
+    </div>
+    <MudNumericField T="int" @bind-Value="Element.Ordre" Label="Ordre d'affichage" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+</div>
+
+@code {
+    private List<ElementListe> _programmes = new();
+    private List<ElementListe> _structures = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _programmes = await ServiceProgramme.ListerPourSelectionAsync();
+        _structures = await ServiceStructure.ListerPourSelectionAsync();
+    }
+}

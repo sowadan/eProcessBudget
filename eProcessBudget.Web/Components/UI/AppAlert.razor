@@ -1,0 +1,88 @@
+@*
+    Message contextuel affiché dans le flux de la page (pas un toast éphémère).
+
+    VARIANTES : info (défaut) | success | warning | danger
+
+    À utiliser pour une information persistante : « mode démonstration actif »,
+    « ce formulaire comporte des erreurs », « la période de saisie est close ».
+    Pour un retour éphémère après une action, préférez ISnackbar.
+
+    EXEMPLE
+    -------
+    <AppAlert Variante="warning" Titre="Mode démonstration" Fermable="true">
+        Les données ne sont pas enregistrées.
+    </AppAlert>
+*@
+
+@if (_visible)
+{
+    <div class="@Classes" role="alert">
+        <div class="flex gap-3">
+            <div class="flex-shrink-0 w-5 h-5 mt-0.5" aria-hidden="true">
+                <AppIcon Nom="@IconeVariante" />
+            </div>
+
+            <div class="flex-1 min-w-0">
+                @if (!string.IsNullOrEmpty(Titre))
+                {
+                    <p class="text-sm font-semibold mb-0.5">@Titre</p>
+                }
+                <div class="text-sm">@ChildContent</div>
+            </div>
+
+            @if (Fermable)
+            {
+                <button type="button" @onclick="() => _visible = false"
+                        class="flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+                        aria-label="Fermer ce message">
+                    <AppIcon Nom="x" Css="w-4 h-4" />
+                </button>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string Titre { get; set; } = "";
+
+    /// <summary>info | success | warning | danger</summary>
+    [Parameter] public string Variante { get; set; } = "info";
+
+    [Parameter] public bool Fermable { get; set; }
+
+    /// <summary>Visibilité initiale. La fermeture par l'utilisateur reste locale au composant.</summary>
+    [Parameter] public bool Visible { get; set; } = true;
+
+    [Parameter] public string ClasseSup { get; set; } = "";
+
+    private bool _visible = true;
+
+    protected override void OnParametersSet() => _visible = Visible;
+
+    private string IconeVariante => Variante switch
+    {
+        "success" => "check-circle",
+        "danger"  => "exclamation",
+        "warning" => "exclamation",
+        _         => "information-circle"
+    };
+
+    private string Classes
+    {
+        get
+        {
+            var couleur = Variante switch
+            {
+                "success" => "bg-green-50 border-green-200 text-green-800",
+                "danger"  => "bg-red-50 border-red-200 text-red-800",
+                "warning" => "bg-amber-50 border-amber-200 text-amber-800",
+                _         => "bg-blue-50 border-blue-200 text-blue-800"
+            };
+
+            return $"rounded-lg p-4 border {couleur} {ClasseSup}".TrimEnd();
+        }
+    }
+}
+
+

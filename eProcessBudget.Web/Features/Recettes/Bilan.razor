@@ -1,0 +1,68 @@
+@page "/recettes/bilan"
+@inject ISyntheseRecetteService Synthese
+@inject ICompteSurChiffresService Chiffres
+
+<PageTitle>Bilan recettes / dépenses — Recettes</PageTitle>
+
+@*
+    Bilan recettes / dépenses d'un exercice (cahier fonctionnel § 3.9.2 et 4.1) : ressources
+    (recettes par catégorie et reports de ressources antérieures) face aux dépenses (dotations
+    des axes de dépenses) ; équilibre prévisionnel et bilan réalisé (encaissé − payé).
+*@
+
+<AutoriseSi DroitsRequis="AccesRecettes.Lecture">
+    <PageHeader Titre="Bilan recettes / dépenses" Description="Ressources de l'exercice face à ses dépenses, en prévision et en réalisation.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><a href="/recettes" class="hover:underline">Recettes</a>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+    </AppCard>
+
+    @if (_bilan is { } b)
+    {
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            <AppStatCard Label="Ressources réalisées" Valeur="@Formats.Montant(b.RessourcesRealisees)" Icone="cash"
+                         SousTitre="@($"Prévues {Formats.Montant(b.RessourcesPrevues)}")" CouleurFond="#DCFCE7" CouleurIcone="#15803D" />
+            <AppStatCard Label="Dépenses réalisées (payé)" Valeur="@Formats.Montant(b.DepensesRealisees)" Icone="clipboard-list"
+                         SousTitre="@($"Dotations {Formats.Montant(b.DepensesPrevues)} · engagé {Formats.Montant(b.DepensesEngagees)}")" CouleurFond="#FEF3C7" CouleurIcone="#B45309" />
+            <AppStatCard Label="Bilan réalisé" Valeur="@Formats.Montant(b.Bilan)" Icone="scale"
+                         SousTitre="Recettes réalisées − dépenses réalisées" CouleurFond="@(b.Bilan < 0 ? "#FEE2E2" : "#EFF6FF")" CouleurIcone="@(b.Bilan < 0 ? "#B91C1C" : "#1D4ED8")" />
+            <AppStatCard Label="Équilibre prévisionnel" Valeur="@Formats.Montant(b.EquilibrePrevisionnel)" Icone="adjustments"
+                         SousTitre="Ressources prévues − dotations totales" CouleurFond="@(b.EquilibrePrevisionnel < 0 ? "#FEE2E2" : "#F3E8FF")" CouleurIcone="@(b.EquilibrePrevisionnel < 0 ? "#B91C1C" : "#7E22CE")" />
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <AppCard PaddingCorps="false" Titre="Ressources" SousTitre="Prévision retenue et encaissé ; reports de ressources antérieures.">
+                <TablePostes Postes="b.Ressources" LibelleRealise="Réalisé" />
+            </AppCard>
+            <AppCard PaddingCorps="false" Titre="Dépenses" SousTitre="Dotations totales et paiements de l'exercice, par axe.">
+                <TablePostes Postes="b.Depenses" LibelleRealise="Payé" />
+            </AppCard>
+        </div>
+
+        <CarteEquilibreTresorerie Equilibre="_equilibre" />
+
+        <AppCard Titre="Trésorerie" SousTitre="Ressources réalisées selon leur positionnement sur les comptes bancaires.">
+            <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                <Info Libelle="Positionnées sur les comptes" Valeur="@Formats.Montant(b.Positionne)" />
+                <Info Libelle="Acquises mais non positionnées" Valeur="@Formats.Montant(b.NonPositionne)" />
+            </dl>
+        </AppCard>
+    }
+</AutoriseSi>
+
+@code {
+    private LigneExercice? _exercice;
+    private BilanRecettesDepenses? _bilan;
+    private EquilibreTresorerie? _equilibre;
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        _bilan = e is null ? null : await Synthese.BilanAsync(e.Id);
+        _equilibre = e is null ? null : await Chiffres.EquilibreAsync(e.Id);
+    }
+}

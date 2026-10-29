@@ -1,0 +1,18 @@
+@inherits LayoutComponentBase
+
+@*
+    Layout sans chrome : ni barre latérale, ni en-tête.
+    Utilisé par les pages qui occupent tout l'écran, comme la page d'erreur.
+
+    Les fournisseurs MudBlazor sont déclarés ici aussi, sinon les dialogues et
+    les notifications toast ne fonctionneraient pas sur ces pages.
+*@
+
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+@Body
+
+

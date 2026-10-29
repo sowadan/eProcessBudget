@@ -1,0 +1,38 @@
+@inject ISituationService Situations
+
+@*
+    Choix d'une dotation validée de l'exercice, par recherche (code ou libellé de ligne,
+    code de projet) : un exercice compte souvent des centaines de dotations.
+*@
+
+<MudAutocomplete T="ElementListe" Value="_choix" ValueChanged="ChoisirAsync" Label="@Label"
+                 SearchFunc="RechercherAsync" ToStringFunc="@(e => e?.Libelle)"
+                 DebounceInterval="300" MinCharacters="0" ResetValueOnEmptyText="true" Disabled="Disabled"
+                 Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="Code ou libellé de la ligne, code du projet." />
+
+@code {
+    [Parameter] public Ulid ExerciceId { get; set; }
+    [Parameter] public Ulid? Value { get; set; }
+    [Parameter] public EventCallback<Ulid?> ValueChanged { get; set; }
+    [Parameter] public string Label { get; set; } = "Dotation";
+    [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>Libellé de la valeur initiale (modification), pour l'afficher sans nouvelle recherche.</summary>
+    [Parameter] public string? LibelleInitial { get; set; }
+
+    private ElementListe? _choix;
+
+    protected override void OnParametersSet()
+    {
+        if (Value is { } id && _choix?.Id != id && LibelleInitial is not null) _choix = new ElementListe(id, LibelleInitial);
+    }
+
+    private async Task<IEnumerable<ElementListe>> RechercherAsync(string? texte, CancellationToken _)
+        => await Situations.RechercherAsync(ExerciceId, texte);
+
+    private Task ChoisirAsync(ElementListe? e)
+    {
+        _choix = e;
+        return ValueChanged.InvokeAsync(e?.Id);
+    }
+}

@@ -1,0 +1,80 @@
+@page "/compte/mot-de-passe-oublie"
+@layout CompteLayout
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@using Microsoft.Extensions.Options
+@inject IAuthentificationService Authentification
+@inject NavigationManager Nav
+@inject IOptions<ApplicationOptions> AppOptions
+@inject IOptions<EmailOptions> EmailOptions
+@inject IWebHostEnvironment Environnement
+
+<PageTitle>Mot de passe oublié — @AppOptions.Value.Nom</PageTitle>
+
+@*
+    Demande d'un lien de réinitialisation par e-mail (cahier fonctionnel § 3.1.2).
+    Le message de confirmation est le même que le compte existe ou non : la page ne doit
+    pas permettre de vérifier l'existence d'un identifiant.
+*@
+
+<h1 class="text-xl font-bold text-gray-800">Mot de passe oublié</h1>
+
+@if (_envoye)
+{
+    <div role="status" class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+        Si un compte actif correspond à cet identifiant et possède une adresse e-mail, un lien de
+        réinitialisation vient d'y être envoyé. Il est valable une durée limitée et ne sert qu'une fois.
+    </div>
+    <p class="text-sm text-gray-500 mt-4">
+        Rien reçu ? Vérifiez vos courriers indésirables, ou demandez à votre administrateur de
+        définir un nouveau mot de passe.
+    </p>
+}
+else
+{
+    <p class="text-sm text-gray-500 mt-1 mb-6">
+        Indiquez votre identifiant ou votre adresse e-mail : nous vous enverrons un lien pour
+        choisir un nouveau mot de passe.
+    </p>
+
+    <EditForm Model="Saisie" method="post" OnValidSubmit="DemanderAsync" FormName="mot-de-passe-oublie" novalidate>
+        <DataAnnotationsValidator />
+        <div class="space-y-4">
+            <div>
+                <label for="identifiant" class="block text-sm font-medium text-gray-700 mb-1">Identifiant ou e-mail</label>
+                <InputText id="identifiant" @bind-Value="Saisie!.Identifiant" autocomplete="username" autofocus
+                           maxlength="150" class="champ-compte" />
+                <ValidationMessage For="() => Saisie!.Identifiant" class="text-xs text-red-600 mt-1" />
+            </div>
+            <button type="submit" class="bouton-compte">Recevoir un lien</button>
+        </div>
+    </EditForm>
+}
+
+<p class="text-center mt-6">
+    <a href="/compte/connexion" class="text-sm font-medium hover:underline" style="color: var(--app-primaire);">
+        Retour à la connexion
+    </a>
+</p>
+
+@code {
+    [SupplyParameterFromForm(FormName = "mot-de-passe-oublie")]
+    private SaisieMotDePasseOublie? Saisie { get; set; }
+
+    private bool _envoye;
+
+    protected override void OnInitialized() => Saisie ??= new SaisieMotDePasseOublie();
+
+    private async Task DemanderAsync()
+    {
+        // L'adresse du lien vient de la configuration : l'en-tête Host d'une requête peut être
+        // falsifié, et le lien partirait alors vers un autre site. Seul le développement se
+        // contente de l'adresse de la requête ; ailleurs, sans Email:BaseUrl, aucun lien ne part.
+        var urlBase = !string.IsNullOrWhiteSpace(EmailOptions.Value.BaseUrl) ? EmailOptions.Value.BaseUrl
+                    : Environnement.IsDevelopment() ? Nav.BaseUri
+                    : null;
+
+        await Authentification.DemanderReinitialisationAsync(Saisie!.Identifiant, urlBase);
+        _envoye = true;
+    }
+}

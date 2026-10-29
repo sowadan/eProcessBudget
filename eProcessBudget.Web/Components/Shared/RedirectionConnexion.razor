@@ -1,0 +1,15 @@
+@inject NavigationManager Nav
+
+@*
+    Affiché par AuthorizeRouteView quand la session n'est plus valide pendant la vie du
+    circuit (expiration, compte désactivé, mot de passe changé...). Rechargement complet :
+    la page de connexion est rendue côté serveur, hors circuit.
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        var retour = "/" + Nav.ToBaseRelativePath(Nav.Uri);
+        Nav.NavigateTo($"/compte/connexion?motif=expiree&retour={Uri.EscapeDataString(retour)}", forceLoad: true);
+    }
+}

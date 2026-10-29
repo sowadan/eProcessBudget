@@ -1,0 +1,128 @@
+@inject IProjetService Service
+@inject IReferentielService<Site> ServiceSite
+@inject IReferentielService<Structure> ServiceStructure
+@inject IReferentielService<Tiers> ServiceTiers
+@inject IReferentielService<SourceFinancement> ServiceSource
+@inject IReferentielService<TypeTravaux> ServiceTypeTravaux
+@inject IReferentielService<ListeValeur> ServiceListe
+
+@*
+    Projet d'un axe : identité, imputation (site, service), dates et statut, puis les
+    champs propres à l'axe : opération de travaux (type de voie, type de travaux, maître
+    d'ouvrage, localisation, km prévus), source de financement d'un investissement, entité
+    bénéficiaire d'un appui. Un investissement peut être un projet de réhabilitation
+    (réponse C.2.4, sous-rubrique 233) : il porte alors les champs de travaux, type fixé.
+*@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <MudTextField @bind-Value="Saisie.Code" Label="Code" MaxLength="30" Required="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <div class="sm:col-span-2">
+                <MudTextField @bind-Value="Saisie.Intitule" Label="Intitulé" MaxLength="300" Required="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+
+            @if (Axe == AxesDepense.Appuis)
+            {
+                <div class="sm:col-span-2">
+                    <ChoixReference Label="Entité bénéficiaire" Elements="_beneficiaires" Obligatoire="true"
+                                    Value="Saisie.TiersBeneficiaireId" ValueChanged="v => Saisie.TiersBeneficiaireId = v" />
+                </div>
+            }
+            @if (Axe == AxesDepense.Investissement || Axe == AxesDepense.Appuis)
+            {
+                <ChoixReference Label="@(Axe == AxesDepense.Investissement ? "Source de financement (RI / RE)" : "Source de financement (facultative)")"
+                                Elements="_sources" Obligatoire="@(Axe == AxesDepense.Investissement)"
+                                Value="Saisie.SourceFinancementId" ValueChanged="v => Saisie.SourceFinancementId = v" />
+            }
+
+            @if (Axe == AxesDepense.Investissement && _rehabilitationId is not null)
+            {
+                <MudSwitch T="bool" @bind-Value="EstRehabilitation" Label="Projet de réhabilitation (233 ouvrages d'infrastructure)" Color="Color.Primary" Class="mt-2" />
+            }
+
+            @if (Axe == AxesDepense.Entretien || EstRehabilitation)
+            {
+                @if (Axe == AxesDepense.Entretien)
+                {
+                    <ChoixReference Label="Type de travaux" Elements="_typesTravaux" Value="Saisie.TypeTravauxId" ValueChanged="v => Saisie.TypeTravauxId = v" />
+                }
+                <ChoixReference Label="Type de voie" Elements="_typesVoie" Value="Saisie.TypeVoieId" ValueChanged="v => Saisie.TypeVoieId = v" />
+                <ChoixReference Label="Maître d'ouvrage" Elements="_maitresOuvrage" Value="Saisie.MaitreOuvrageId" ValueChanged="v => Saisie.MaitreOuvrageId = v" />
+                <div class="sm:col-span-2">
+                    <MudTextField @bind-Value="Saisie.Localisation" Label="Localisation (tronçon, axe, commune)" MaxLength="300" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </div>
+                <MudNumericField T="decimal?" @bind-Value="Saisie.KmPrevus" Label="Kilométrage prévu" Min="0" Format="0.####" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            }
+
+            <ChoixReference Label="@(Axe == AxesDepense.Appuis ? "Site (poste de péage concerné)" : "Site")" Elements="_sites"
+                            Value="Saisie.SiteId" ValueChanged="v => Saisie.SiteId = v" />
+            <ChoixReference Label="Service" Elements="_structures" Value="Saisie.StructureId" ValueChanged="v => Saisie.StructureId = v" />
+            <ChoixEnum TEnum="StatutProjet" Label="Statut" Libelles="LibellesAxes.StatutProjet" @bind-Value="Saisie.Statut" />
+
+            <ChampDate Label="Début" @bind-Value="Saisie.DateDebut" />
+            <ChampDate Label="Fin" @bind-Value="Saisie.DateFin" />
+            <MudSwitch T="bool" @bind-Value="Saisie.EstPluriannuel" Label="Pluriannuel (AE + CP annuels)" Color="Color.Primary" Class="mt-2" />
+
+            <div class="sm:col-span-3">
+                <MudTextField @bind-Value="Saisie.Description" Label="Description" Lines="3" MaxLength="2000" Counter="2000" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter, EditorRequired] public AxeDepense Axe { get; set; } = AxesDepense.Entretien;
+    [Parameter] public SaisieProjet Saisie { get; set; } = new();
+
+    private List<ElementListe> _sites = new(), _structures = new(), _beneficiaires = new(), _sources = new(),
+                               _typesTravaux = new(), _typesVoie = new(), _maitresOuvrage = new();
+    private bool _enregistrement;
+    private string? _erreur;
+    private Ulid? _rehabilitationId;
+
+    /// <summary>Investissement porté en projet de réhabilitation : son type de travaux est la réhabilitation.</summary>
+    private bool EstRehabilitation
+    {
+        get => Axe == AxesDepense.Investissement && _rehabilitationId is not null && Saisie.TypeTravauxId == _rehabilitationId;
+        set => Saisie.TypeTravauxId = value ? _rehabilitationId : null;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Saisie.CodeAxe = Axe.Code;
+        _sites = await ServiceSite.ListerPourSelectionAsync();
+        _structures = await ServiceStructure.ListerPourSelectionAsync();
+        if (Axe == AxesDepense.Investissement || Axe == AxesDepense.Appuis)
+            _sources = await ServiceSource.ListerPourSelectionAsync();
+        if (Axe == AxesDepense.Appuis)
+            _beneficiaires = await ServiceTiers.ListerPourSelectionAsync(t => t.TypeTiers == TypeTiers.EntiteBeneficiaireAppuis);
+        if (Axe == AxesDepense.Investissement)
+            _rehabilitationId = (await ServiceTypeTravaux.ListerPourSelectionAsync(t => t.Code == CodesTypeTravaux.Rehabilitation && !t.EstPrestationControle))
+                .Select(e => (Ulid?)e.Id).FirstOrDefault();
+        if (Axe == AxesDepense.Entretien)
+            _typesTravaux = await ServiceTypeTravaux.ListerPourSelectionAsync(t => !t.EstPrestationControle && t.Code != CodesTypeTravaux.Rehabilitation);
+        if (Axe == AxesDepense.Entretien || Axe == AxesDepense.Investissement)
+        {
+            _typesVoie = await ServiceListe.ListerPourSelectionAsync(l => l.Categorie == CategoriesListeValeur.TypeVoie);
+            _maitresOuvrage = await ServiceTiers.ListerPourSelectionAsync(t => t.TypeTiers == TypeTiers.MaitreOuvrage);
+        }
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur, var id) = await Service.EnregistrerAsync(Saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(id));
+    }
+}

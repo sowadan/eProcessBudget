@@ -1,0 +1,82 @@
+@page "/recettes/echeancier"
+@inject ISyntheseRecetteService Synthese
+
+<PageTitle>Échéancier de recouvrement — Recettes</PageTitle>
+
+@*
+    Suivi de l'échéancier de recouvrement (cahier fonctionnel § 3.9.2) : toutes les échéances
+    de l'exercice et leur couverture par les encaissements, dans l'ordre chronologique de
+    chaque prévision. Une échéance passée non couverte est en retard et fait l'objet d'une
+    alerte nocturne. L'échéancier se définit depuis l'écran Prévisions.
+*@
+
+<AutoriseSi DroitsRequis="AccesRecettes.Lecture">
+    <PageHeader Titre="Échéancier de recouvrement" Description="Échéances attendues, couvertes ou en retard.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><a href="/recettes" class="hover:underline">Recettes</a>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+            <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+            <MudSwitch T="bool" Value="_enRetard" ValueChanged="ChangerFiltreAsync" Label="En retard seulement" Color="Color.Error" />
+        </div>
+    </AppCard>
+
+    @if (_exercice is not null)
+    {
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <AppStatCard Label="Attendu" Valeur="@Formats.Montant(_lignes.Sum(l => l.Attendu))" Icone="clock" />
+            <AppStatCard Label="Couvert" Valeur="@Formats.Montant(_lignes.Sum(l => l.Couvert))" Icone="check-circle" CouleurFond="#DCFCE7" CouleurIcone="#15803D" />
+            <AppStatCard Label="En retard" Valeur="@Formats.Montant(_lignes.Where(l => l.EnRetard).Sum(l => l.Reste))" Icone="exclamation"
+                         SousTitre="@($"{_lignes.Count(l => l.EnRetard)} échéance(s)")" CouleurFond="#FEE2E2" CouleurIcone="#B91C1C" />
+        </div>
+
+        <AppCard PaddingCorps="false">
+            @if (_lignes.Count == 0)
+            {
+                <EtatVide Icone="check-circle" Titre="@(_enRetard ? "Aucune échéance en retard" : "Aucune échéance")" Message="L'échéancier se définit sur chaque prévision (Recettes › Prévisions)." />
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Hover="true">
+                    <thead><tr><th>Échéance</th><th>Prévision</th><th class="text-right">Attendu</th><th class="text-right">Couvert</th><th class="text-right">Reste</th><th>Statut</th></tr></thead>
+                    <tbody>
+                        @foreach (var e in _lignes)
+                        {
+                            <tr>
+                                <td class="whitespace-nowrap">@e.Date.ToString("dd/MM/yyyy")</td>
+                                <td class="text-xs">@e.Prevision</td>
+                                <td class="tabular-nums text-right">@Formats.Montant(e.Attendu)</td>
+                                <td class="tabular-nums text-right">@Formats.Montant(e.Couvert)</td>
+                                <td class="tabular-nums text-right @(e.EnRetard ? "text-red-700 font-semibold" : "")">@Formats.Montant(e.Reste)</td>
+                                <td><AppBadge Variante="@(e.EnRetard ? "danger" : e.Couvert >= e.Attendu ? "success" : "neutral")" Petit="true">@e.Statut</AppBadge></td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </AppCard>
+    }
+</AutoriseSi>
+
+@code {
+    private LigneExercice? _exercice;
+    private List<SuiviEcheance> _lignes = new();
+    private bool _enRetard;
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        await ChargerAsync();
+    }
+
+    private async Task ChangerFiltreAsync(bool enRetard)
+    {
+        _enRetard = enRetard;
+        await ChargerAsync();
+    }
+
+    private async Task ChargerAsync() => _lignes = _exercice is null ? new() : await Synthese.EcheancesAsync(_exercice.Id, _enRetard);
+}

@@ -1,0 +1,252 @@
+@page "/budget-programme"
+@inject IProgrammeService ProgrammeService
+@inject IReferentielService<Programme> ServiceProgramme
+@inject IReferentielService<ActionProgramme> ServiceAction
+@inject IReferentielService<Activite> ServiceActivite
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Programmes — Budget-programme</PageTitle>
+
+@*
+    Programmation stratégique (§ 3.3.2) : arborescence programme › action › activité.
+    Chaque niveau n'est lu qu'au dépliage. La Direction et l'Administrateur définissent
+    (BudgetProgrammeDefinir) ; les autres acteurs consultent.
+*@
+
+<AutoriseSi DroitsRequis="CatalogueReferentiels.LectureBudgetProgramme">
+    <PageHeader Titre="Programmes" Description="Programmes, actions et activités, avec leurs responsables et structures.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><span class="text-gray-700">Budget-programme</span>
+        </BreadcrumbContent>
+        <ActionsContent>
+            <AppButton Variante="outline" OnClick="@(() => Nav.NavigateTo("/budget-programme/programmes"))">Listes et import</AppButton>
+            @if (_peutGerer)
+            {
+                <AppButton Icone="plus" OnClick="AjouterProgrammeAsync">Nouveau programme</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    <AppCard PaddingCorps="false">
+        @if (_chargement)
+        {
+            <div class="flex justify-center py-16"><MudProgressCircular Indeterminate="true" Color="Color.Primary" /></div>
+        }
+        else if (_programmes.Count == 0)
+        {
+            <EtatVide Icone="clipboard-list" Titre="Aucun programme" Message="Créez le premier programme, ou importez-les depuis Excel." />
+        }
+        else
+        {
+            <ul class="divide-y divide-gray-100">
+                @foreach (var p in _programmes)
+                {
+                    @Noeud(p, 0)
+                }
+            </ul>
+        }
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    [Inject] private NavigationManager Nav { get; set; } = null!;
+
+    private List<NoeudProgramme> _programmes = new();
+    private readonly Dictionary<Ulid, List<NoeudProgramme>> _enfants = new();
+    private readonly Dictionary<Ulid, NoeudProgramme?> _parentDe = new();
+    private readonly HashSet<Ulid> _ouverts = new();
+    private bool _chargement = true;
+    private bool _peutGerer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutGerer = await ServiceProgramme.PeutGererAsync();
+        await ChargerProgrammesAsync();
+        _chargement = false;
+    }
+
+    private RenderFragment Noeud(NoeudProgramme n, int profondeur) => __builder =>
+    {
+        var ouvert = _ouverts.Contains(n.Id);
+        <li>
+            <div class="flex items-center gap-2 py-2 pr-3 hover:bg-gray-50 @(n.EstActif ? "" : "opacity-50")" style="padding-left:@(0.75 + profondeur * 1.5)rem">
+                @if (n.Niveau != NiveauProgramme.Activite)
+                {
+                    <button type="button" class="w-6 h-6 flex items-center justify-center text-gray-500 hover:text-gray-900 rounded"
+                            aria-label="@(ouvert ? "Replier" : "Déplier")" aria-expanded="@ouvert" @onclick="() => BasculerAsync(n)">
+                        <MudIcon Icon="@(ouvert ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.ChevronRight)" Size="Size.Small" />
+                    </button>
+                }
+                else
+                {
+                    <span class="w-6"></span>
+                }
+                <span class="font-mono text-xs font-semibold text-gray-800 min-w-12">@n.Code</span>
+                <span class="text-sm @(n.Niveau == NiveauProgramme.Programme ? "font-semibold text-gray-800" : "text-gray-700") flex-1 min-w-0 truncate">@n.Libelle</span>
+                @if (!string.IsNullOrEmpty(n.Detail))
+                {
+                    <span class="hidden md:inline text-xs text-gray-400 truncate max-w-64">@n.Detail</span>
+                }
+                @if (n.NbIndicateurs > 0)
+                {
+                    <AppBadge Variante="info" Petit="true">@n.NbIndicateurs indic.</AppBadge>
+                }
+                @if (!n.EstActif)
+                {
+                    <AppBadge Variante="neutral" Petit="true">Inactif</AppBadge>
+                }
+                <span class="flex items-center whitespace-nowrap">
+                    @if (n.Niveau == NiveauProgramme.Programme)
+                    {
+                        <MudTooltip Text="Structures responsables">
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.AccountTree" OnClick="() => StructuresAsync(n)" />
+                        </MudTooltip>
+                    }
+                    @if (_peutGerer)
+                    {
+                        @if (n.Niveau != NiveauProgramme.Activite)
+                        {
+                            <MudTooltip Text="@(n.Niveau == NiveauProgramme.Programme ? "Ajouter une action" : "Ajouter une activité")">
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Add" OnClick="() => AjouterEnfantAsync(n)" />
+                            </MudTooltip>
+                        }
+                        <MudTooltip Text="Modifier">
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => ModifierAsync(n)" />
+                        </MudTooltip>
+                        <MudTooltip Text="@(n.EstActif ? "Désactiver" : "Activer")">
+                            <MudIconButton Size="Size.Small" Icon="@(n.EstActif ? Icons.Material.Outlined.ToggleOn : Icons.Material.Outlined.ToggleOff)"
+                                           OnClick="() => BasculerEtatAsync(n)" />
+                        </MudTooltip>
+                        <MudTooltip Text="Supprimer">
+                            <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerAsync(n)" />
+                        </MudTooltip>
+                    }
+                </span>
+            </div>
+            @if (ouvert && _enfants.TryGetValue(n.Id, out var enfants))
+            {
+                @if (enfants.Count == 0)
+                {
+                    <p class="text-xs text-gray-400 py-2" style="padding-left:@(3.5 + profondeur * 1.5)rem">Aucun élément.</p>
+                }
+                else
+                {
+                    <ul>
+                        @foreach (var e in enfants)
+                        {
+                            @Noeud(e, profondeur + 1)
+                        }
+                    </ul>
+                }
+            }
+        </li>
+    };
+
+    private async Task ChargerProgrammesAsync()
+    {
+        _programmes = await ProgrammeService.ListerProgrammesAsync();
+        foreach (var p in _programmes) _parentDe[p.Id] = null;
+    }
+
+    private async Task ChargerEnfantsAsync(NoeudProgramme parent)
+    {
+        var enfants = await ProgrammeService.ListerEnfantsAsync(parent.Niveau, parent.Id);
+        _enfants[parent.Id] = enfants;
+        foreach (var e in enfants) _parentDe[e.Id] = parent;
+    }
+
+    private async Task BasculerAsync(NoeudProgramme n)
+    {
+        if (!_ouverts.Remove(n.Id))
+        {
+            await ChargerEnfantsAsync(n);
+            _ouverts.Add(n.Id);
+        }
+    }
+
+    private async Task RechargerFratrieAsync(NoeudProgramme n)
+    {
+        if (_parentDe.GetValueOrDefault(n.Id) is { } parent) await ChargerEnfantsAsync(parent);
+        else await ChargerProgrammesAsync();
+    }
+
+    private async Task<bool> OuvrirAsync<T>(T element, Type formulaire, string titre) where T : EntiteOrganisme, new()
+    {
+        var parametres = new DialogParameters<DialogReferentiel<T>> { { x => x.Element, element }, { x => x.Formulaire, formulaire } };
+        var dialog = await DialogService.ShowAsync<DialogReferentiel<T>>(titre, parametres, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        var ok = await dialog.Result is { Canceled: false };
+        if (ok) Snackbar.Add("Enregistré.", Severity.Success);
+        return ok;
+    }
+
+    private async Task AjouterProgrammeAsync()
+    {
+        if (await OuvrirAsync(new Programme(), typeof(FormulaireProgramme), "Nouveau programme")) await ChargerProgrammesAsync();
+    }
+
+    private async Task AjouterEnfantAsync(NoeudProgramme n)
+    {
+        var ok = n.Niveau == NiveauProgramme.Programme
+            ? await OuvrirAsync(new ActionProgramme { ProgrammeId = n.Id }, typeof(FormulaireActionProgramme), $"Nouvelle action de {n.Code}")
+            : await OuvrirAsync(new Activite { ActionId = n.Id }, typeof(FormulaireActivite), $"Nouvelle activité de {n.Code}");
+        if (!ok) return;
+        await ChargerEnfantsAsync(n);
+        _ouverts.Add(n.Id);
+        await RechargerFratrieAsync(n);
+    }
+
+    private async Task ModifierAsync(NoeudProgramme n)
+    {
+        var ok = n.Niveau switch
+        {
+            NiveauProgramme.Programme => await ServiceProgramme.ObtenirAsync(n.Id) is { } p && await OuvrirAsync(p, typeof(FormulaireProgramme), $"Modifier {n.Code}"),
+            NiveauProgramme.Action => await ServiceAction.ObtenirAsync(n.Id) is { } a && await OuvrirAsync(a, typeof(FormulaireActionProgramme), $"Modifier {n.Code}"),
+            _ => await ServiceActivite.ObtenirAsync(n.Id) is { } v && await OuvrirAsync(v, typeof(FormulaireActivite), $"Modifier {n.Code}")
+        };
+        if (ok) await RechargerFratrieAsync(n);
+    }
+
+    private async Task BasculerEtatAsync(NoeudProgramme n)
+    {
+        var (ok, erreur) = n.Niveau switch
+        {
+            NiveauProgramme.Programme => await ServiceProgramme.ChangerEtatAsync(n.Id, !n.EstActif),
+            NiveauProgramme.Action => await ServiceAction.ChangerEtatAsync(n.Id, !n.EstActif),
+            _ => await ServiceActivite.ChangerEtatAsync(n.Id, !n.EstActif)
+        };
+        if (!ok) { Snackbar.Add(erreur!, Severity.Error); return; }
+        await RechargerFratrieAsync(n);
+    }
+
+    private async Task SupprimerAsync(NoeudProgramme n)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, $"Supprimer « {n.Code} — {n.Libelle} »" },
+            { x => x.Message, "Refusé si des données y sont rattachées (règle § 4.2) ; il reste alors possible de le désactiver." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+
+        var (ok, erreur) = n.Niveau switch
+        {
+            NiveauProgramme.Programme => await ServiceProgramme.SupprimerAsync(n.Id),
+            NiveauProgramme.Action => await ServiceAction.SupprimerAsync(n.Id),
+            _ => await ServiceActivite.SupprimerAsync(n.Id)
+        };
+        if (!ok) { Snackbar.Add(erreur!, Severity.Error); return; }
+        _ouverts.Remove(n.Id);
+        var parent = _parentDe.GetValueOrDefault(n.Id);
+        await RechargerFratrieAsync(n);
+        if (parent is not null) await RechargerFratrieAsync(parent);
+    }
+
+    private async Task StructuresAsync(NoeudProgramme n)
+    {
+        var parametres = new DialogParameters<DialogStructuresProgramme> { { x => x.ProgrammeId, n.Id }, { x => x.PeutGerer, _peutGerer } };
+        var dialog = await DialogService.ShowAsync<DialogStructuresProgramme>($"Structures responsables : {n.Code}", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) Snackbar.Add("Structures enregistrées.", Severity.Success);
+    }
+}

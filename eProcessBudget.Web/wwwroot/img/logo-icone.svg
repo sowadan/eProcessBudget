@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="eProcessBudget">
+  <!-- Icone eProcessBudget : tuile marine, pour fond clair et favicon -->
+  <rect width="400" height="400" rx="92" fill="#1F3864"/>
+  <path d="M276.6 264.3A100 100 0 1 1 300 200" fill="none" stroke="#4A9BE8" stroke-width="40" stroke-linecap="round"/>
+  <rect x="104" y="180" width="136" height="40" fill="#FFFFFF"/>
+  <rect x="240" y="180" width="60" height="40" fill="#FFFFFF" fill-opacity="0.35"/>
+  <circle cx="276" cy="264" r="24" fill="#F2A33A"/>
+</svg>

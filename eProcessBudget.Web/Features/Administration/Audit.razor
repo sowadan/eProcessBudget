@@ -1,0 +1,200 @@
+@page "/administration/audit"
+@using eProcessBudget.Infrastructure.Services.Rapports
+@using eProcessBudget.Web.Features.Axes.Commun
+@inject IJournalAuditService Service
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<PageTitle>Journal d'audit — Administration</PageTitle>
+
+@*
+    Journal d'audit (cahier fonctionnel § 3.13, technique § 4.9) : qui a fait quoi, quand,
+    depuis quelle adresse, sur quel élément ; filtres multicritères ; détail avec les valeurs
+    avant / après côte à côte ; export Excel ou PDF (droit AuditExportation).
+
+    Deux sortes de lignes : les écritures journalisées automatiquement (module « Données »,
+    valeurs champ par champ) et les événements métier écrits par les services (validations,
+    exports, clôtures, attributions de droits...).
+
+    La liste n'affiche que des colonnes courtes ; les valeurs JSON ne sont chargées qu'à
+    l'ouverture du détail d'une ligne.
+*@
+
+<AutoriseSi DroitsRequis="new[] { TypeDroit.AuditConsultation }">
+
+    <PageHeader Titre="Journal d'audit" Description="Historique de toutes les opérations effectuées dans l'application.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><span class="text-gray-700">Administration</span>
+        </BreadcrumbContent>
+        <ActionsContent>
+            @if (_peutExporter)
+            {
+                <AppButton Icone="download" EnChargement="_export == FormatRapport.Excel" Desactive="_export is not null" OnClick="() => ExporterAsync(FormatRapport.Excel)">Exporter en Excel</AppButton>
+                <AppButton Icone="download" Variante="outline" EnChargement="_export == FormatRapport.Pdf" Desactive="_export is not null" OnClick="() => ExporterAsync(FormatRapport.Pdf)">Exporter en PDF</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    <!-- ═══ Filtres ══════════════════════════════════════════════════════ -->
+    <AppCard ClasseSup="mb-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <ChampDate Label="Du" Value="_filtre.Du" ValueChanged="v => FiltrerAsync(() => _filtre.Du = v)" />
+            <ChampDate Label="Au" Value="_filtre.Au" ValueChanged="v => FiltrerAsync(() => _filtre.Au = v)" />
+            <ChoixReference Label="Utilisateur" Elements="_utilisateurs" Value="_filtre.UtilisateurId" ValueChanged="v => FiltrerAsync(() => _filtre.UtilisateurId = v)" />
+            <MudTextField T="string" Value="_filtre.Recherche" ValueChanged="v => FiltrerAsync(() => _filtre.Recherche = v)" Label="Recherche" Placeholder="Identifiant, matricule, adresse IP…"
+                          DebounceInterval="400" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" />
+
+            <MudSelect T="bool?" Value="_filtre.Automatique" ValueChanged="v => FiltrerAsync(() => _filtre.Automatique = v)" Label="Type" Clearable="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(b => b is null ? "" : b.Value ? "Écritures (automatique)" : "Événements métier")">
+                <MudSelectItem T="bool?" Value="false">Événements métier</MudSelectItem>
+                <MudSelectItem T="bool?" Value="true">Écritures (automatique)</MudSelectItem>
+            </MudSelect>
+            <MudSelect T="string" Value="_filtre.Module" ValueChanged="v => FiltrerAsync(() => _filtre.Module = v)" Label="Module" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                @foreach (var m in _modules) { <MudSelectItem Value="@m">@m</MudSelectItem> }
+            </MudSelect>
+            <MudSelect T="string" Value="_filtre.Action" ValueChanged="v => FiltrerAsync(() => _filtre.Action = v)" Label="Action" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                @foreach (var a in _actions) { <MudSelectItem Value="@a">@a</MudSelectItem> }
+            </MudSelect>
+            <MudSelect T="string" Value="_filtre.Entite" ValueChanged="v => FiltrerAsync(() => _filtre.Entite = v)" Label="Élément (table)" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                @foreach (var e in _entites) { <MudSelectItem Value="@e">@e</MudSelectItem> }
+            </MudSelect>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-3 mt-3">
+            <MudChipSet T="string" SelectedValue="@_resultat" SelectedValueChanged="ChangerResultatAsync" CheckMark="true" Size="Size.Small">
+                <MudChip T="string" Value="@("tous")" Text="Tous les résultats" />
+                <MudChip T="string" Value="@("succes")" Text="Succès" Color="Color.Success" />
+                <MudChip T="string" Value="@("echec")" Text="Échecs" Color="Color.Error" />
+            </MudChipSet>
+            <div class="flex items-center gap-3">
+                <p class="text-xs text-gray-500">Journal en ajout seul, conservé @_retention mois (Paramétrage › Organisme).</p>
+                <AppButton Variante="ghost" Taille="sm" Icone="x" OnClick="ReinitialiserAsync">Effacer les filtres</AppButton>
+            </div>
+        </div>
+    </AppCard>
+
+    <!-- ═══ Liste ═══════════════════════════════════════════════════════ -->
+    <AppCard PaddingCorps="false">
+        <ChildContent>
+            @if (_chargement && _items.Count == 0)
+            {
+                <div class="flex justify-center py-16"><MudProgressCircular Indeterminate="true" Color="Color.Primary" /></div>
+            }
+            else if (_items.Count == 0)
+            {
+                <EtatVide Icone="search" Titre="Aucune entrée" Message="Aucune opération ne correspond à ces critères." />
+            }
+            else
+            {
+                <div class="zone-defilante">
+                    <MudSimpleTable Dense="true" Hover="true">
+                        <thead>
+                            <tr><th>Date</th><th>Utilisateur</th><th>Adresse IP</th><th>Module</th><th>Action</th><th>Élément</th><th>Résultat</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var l in _items)
+                            {
+                                <tr class="cursor-pointer" @onclick="() => OuvrirAsync(l)">
+                                    <td class="whitespace-nowrap text-xs text-gray-600 tabular-nums">@l.DateAction.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
+                                    <td class="font-mono text-xs text-gray-700">@(string.IsNullOrWhiteSpace(l.Matricule) ? "système" : l.Matricule)</td>
+                                    <td class="font-mono text-xs text-gray-500">@l.AdresseIp</td>
+                                    <td><AppBadge Petit="true" Variante="@(l.Module == "Données" ? "neutral" : "info")">@l.Module</AppBadge></td>
+                                    <td class="text-xs font-medium text-gray-800">@l.Action</td>
+                                    <td class="text-xs text-gray-500">@l.Entite <span class="font-mono text-gray-400">@l.EntiteId</span></td>
+                                    <td><AppBadge Variante="@(l.EstSucces ? "success" : "danger")" Petit="true">@(l.EstSucces ? "Succès" : "Échec")</AppBadge></td>
+                                    <td class="text-right">
+                                        @if (l.AvecValeurs) { <span class="text-xs text-blue-700 whitespace-nowrap">Avant / après ›</span> }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </div>
+            }
+        </ChildContent>
+        <PiedContent>
+            <div class="flex items-center justify-between gap-4 flex-wrap">
+                <p class="text-xs text-gray-500">@_total.ToString("N0") entrée(s)@(_peutExporter && _total > JournalAuditService.ExportMax ? $" · l'export reprend les {JournalAuditService.ExportMax:N0} plus récentes" : "")</p>
+                @if (_total > Taille)
+                {
+                    <MudPagination Count="@((int)Math.Ceiling(_total / (double)Taille))" Selected="_page" SelectedChanged="ChargerAsync" Color="Color.Primary" Size="Size.Small" />
+                }
+            </div>
+        </PiedContent>
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    private const int Taille = 50;
+
+    private FiltreAudit _filtre = new();
+    private List<LigneJournal> _items = new();
+    private List<string> _modules = new(), _actions = new(), _entites = new();
+    private List<ElementListe> _utilisateurs = new();
+    private string _resultat = "tous";
+    private int _total, _page = 1, _retention = 12;
+    private bool _chargement = true, _peutExporter;
+    private FormatRapport? _export;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutExporter = (await Droits.ObtenirDroitsAsync(await UserContext.ObtenirUserIdAsync())).Contains(TypeDroit.AuditExportation);
+        (_modules, _actions, _entites) = await Service.ListerValeursAsync();
+        _utilisateurs = await Service.ListerUtilisateursAsync();
+        _retention = await Service.RetentionMoisAsync();
+        await ChargerAsync(1);
+    }
+
+    private async Task ChargerAsync(int page)
+    {
+        _page = page;
+        _chargement = true;
+        (_items, _total) = await Service.RechercherAsync(_filtre, page, Taille);
+        _chargement = false;
+    }
+
+    private async Task FiltrerAsync(Action changer)
+    {
+        changer();
+        await ChargerAsync(1);
+    }
+
+    private Task ChangerResultatAsync(string? valeur)
+    {
+        _resultat = valeur ?? "tous";
+        return FiltrerAsync(() => _filtre.EstSucces = _resultat switch { "succes" => true, "echec" => false, _ => null });
+    }
+
+    private async Task ReinitialiserAsync()
+    {
+        _filtre = new FiltreAudit();
+        _resultat = "tous";
+        await ChargerAsync(1);
+    }
+
+    private async Task OuvrirAsync(LigneJournal l)
+        => await DialogService.ShowAsync<DialogDetailAudit>($"{l.Action} · {l.Entite}", new DialogParameters<DialogDetailAudit> { { x => x.Id, l.Id } },
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true });
+
+    private async Task ExporterAsync(FormatRapport format)
+    {
+        _export = format;
+        try
+        {
+            var (ok, erreur, fichier) = await Service.ExporterAsync(_filtre, format);
+            if (!ok)
+            {
+                Snackbar.Add(erreur!, Severity.Error);
+                return;
+            }
+            using var flux = new MemoryStream(fichier!.Contenu);
+            using var reference = new DotNetStreamReference(flux);
+            await JS.InvokeVoidAsync("appTelechargerFlux", fichier.NomFichier, reference);
+            Snackbar.Add($"{fichier.NomFichier} téléchargé.", Severity.Success);
+        }
+        finally { _export = null; }
+    }
+}

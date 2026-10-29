@@ -1,0 +1,44 @@
+@inject IPaiementService Service
+
+@* Facture reçue sur un engagement (C.2.2) : enregistrée pour mémoire, le total facturé reste dans le montant engagé. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <MudTextField @bind-Value="_saisie.Numero" Label="Numéro fournisseur" MaxLength="50" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudNumericField T="decimal" @bind-Value="_saisie.Montant" Label="Montant TTC" Min="0" Format="N2" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudDatePicker Date="@(_saisie.DateFacture?.ToDateTime(TimeOnly.MinValue))" DateChanged="d => _saisie.DateFacture = d is { } v ? DateOnly.FromDateTime(v) : null"
+                           Label="Date de facture" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudDatePicker Date="@(_saisie.DateReception?.ToDateTime(TimeOnly.MinValue))" DateChanged="d => _saisie.DateReception = d is { } v ? DateOnly.FromDateTime(v) : null"
+                           Label="Date de réception" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Ulid EngagementId { get; set; }
+
+    private SaisieFacture _saisie = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override void OnInitialized()
+        => _saisie = new SaisieFacture { EngagementId = EngagementId, DateReception = DateOnly.FromDateTime(DateTime.Today) };
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.AjouterFactureAsync(_saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

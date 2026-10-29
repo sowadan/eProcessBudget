@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- TargetFramework, Nullable, ImplicitUsings : voir Directory.Build.props -->
+  <PropertyGroup>
+    <RootNamespace>eProcessBudget.Tests</RootNamespace>
+    <!-- xUnit v3 : chaque projet de tests est un exécutable -->
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!-- xUnit1051 (jeton d'annulation à chaque appel) : sans objet pour des tests en mémoire de quelques ms -->
+    <NoWarn>$(NoWarn);xUnit1051</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <!-- Base en mémoire : tests des règles des services, sans SQL Server -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\eProcessBudget.Infrastructure\eProcessBudget.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

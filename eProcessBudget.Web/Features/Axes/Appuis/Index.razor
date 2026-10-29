@@ -1,0 +1,121 @@
+@page "/axes/appuis"
+@inject ISyntheseAxeService Synthese
+@inject NavigationManager Nav
+
+<PageTitle>Appuis — Axes de dépenses</PageTitle>
+
+@*
+    Axe Appuis (cahier fonctionnel § 3.8) : appuis financiers aux partenaires
+    institutionnels, par entité (hiérarchie entité > sous-entité, C.2.8) avec leur compte
+    général et, pour les collectivités, les postes de péage de leur zone d'implantation ;
+    projets d'appui ; situation par rubrique. Solde des appuis = montant prévu − versé.
+*@
+
+<AutoriseSi DroitsRequis="Axe.Lecture">
+    <PageHeader Titre="Appuis" Description="Appuis aux partenaires institutionnels, par entité et par projet.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><span>Axes de dépenses</span>
+        </BreadcrumbContent>
+        <ActionsContent>
+            <AppButton Variante="outline" Icone="cash" OnClick="@(() => Nav.NavigateTo(RoutesAxes.Appuis + "/versements"))">Versements</AppButton>
+        </ActionsContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+    </AppCard>
+
+    @if (_exercice is not null)
+    {
+        <CartesAxe Montants="_totaux" LibellePaye="Versé" />
+    }
+
+    <MudTabs Elevation="0" Rounded="true" TabPanelsClass="pt-4" ActivePanelIndexChanged="ChangerOngletAsync">
+        <MudTabPanel Text="Par entité">
+            <AppCard PaddingCorps="false">
+                @if (_entites.Count == 0)
+                {
+                    <EtatVide Icone="users" Titre="Aucun appui sur l'exercice" Message="Les appuis se prévoient par des dotations portant l'entité, ou le projet d'appui." />
+                }
+                else
+                {
+                    <MudSimpleTable Dense="true" Hover="true">
+                        <thead>
+                            <tr>
+                                <th>Entité</th><th>Catégorie</th><th>Sites (zone d'implantation)</th>
+                                <th class="text-right">Prévu</th><th class="text-right">Engagé</th><th class="text-right">Versé</th>
+                                <th class="text-right">Solde</th><th class="text-right">En attente</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var e in _entites)
+                            {
+                                <tr class="@(e.Id is { } ? "cursor-pointer" : "")" @onclick="() => OuvrirVersements(e)">
+                                    <td class="@(e.Id is null ? "italic text-gray-500" : "")">
+                                        @e.Entite
+                                        @if (e.Parent is not null) { <div class="text-xs text-gray-500">rattachée à @e.Parent</div> }
+                                        @if (e.CompteGeneral is not null) { <div class="text-xs text-gray-400 font-mono">compte @e.CompteGeneral</div> }
+                                    </td>
+                                    <td class="text-xs">@e.Categorie</td>
+                                    <td class="text-xs text-gray-600">@e.Sites</td>
+                                    <td class="tabular-nums text-right">@Formats.Montant(e.Montants.DotationTotale)</td>
+                                    <td class="tabular-nums text-right">@Formats.Montant(e.Montants.AETotal)</td>
+                                    <td class="tabular-nums text-right">@Formats.Montant(e.Montants.PaiementsTotal)</td>
+                                    <td class="tabular-nums text-right">@Formats.Montant(e.Solde)</td>
+                                    <td class="text-right">
+                                        @if (e.NbEnAttente > 0) { <AppBadge Variante="warning" Petit="true">@e.NbEnAttente appui(s)</AppBadge> }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </AppCard>
+        </MudTabPanel>
+        <MudTabPanel Text="Projets d'appui">
+            <ListeProjets Axe="Axe" Exercice="_exercice" />
+        </MudTabPanel>
+        <MudTabPanel Text="Par rubrique">
+            <AppCard PaddingCorps="false"><TableauRegroupement Lignes="_rubriques" LibelleColonne="Rubrique" LibellePaye="Versé" AvecSolde="true" /></AppCard>
+        </MudTabPanel>
+    </MudTabs>
+</AutoriseSi>
+
+@code {
+    private static readonly AxeDepense Axe = AxesDepense.Appuis;
+
+    private LigneExercice? _exercice;
+    private MontantsDotation _totaux = MontantsDotation.Zero;
+    private List<LigneAppuiEntite> _entites = new();
+    private List<LigneRegroupement> _rubriques = new();
+    private bool _rubriquesChargees;
+    private int _onglet;
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        _rubriquesChargees = false;
+        if (e is null) return;
+        _totaux = await Synthese.TotauxAsync(Axe, e.Id);
+        _entites = await Synthese.AppuisParEntiteAsync(e.Id);
+        await ChargerOngletAsync();
+    }
+
+    private async Task ChangerOngletAsync(int index)
+    {
+        _onglet = index;
+        await ChargerOngletAsync();
+    }
+
+    private async Task ChargerOngletAsync()
+    {
+        if (_exercice is null || _onglet != 2 || _rubriquesChargees) return;
+        _rubriques = await Synthese.RegrouperAsync(Axe, _exercice.Id, Regroupement.Rubrique);
+        _rubriquesChargees = true;
+    }
+
+    private void OuvrirVersements(LigneAppuiEntite e)
+    {
+        if (e.Id is { } id) Nav.NavigateTo($"{RoutesAxes.Appuis}/versements?entite={id}");
+    }
+}

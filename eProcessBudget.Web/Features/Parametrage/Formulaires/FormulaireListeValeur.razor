@@ -1,0 +1,20 @@
+@inherits FormulaireBase<ListeValeur>
+
+@* Formulaire de saisie : valeur d'une liste paramétrable (catégorie, code, libellé, ordre). *@
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <MudSelect T="string" @bind-Value="Element.Categorie" Label="Liste" Variant="Variant.Outlined" Margin="Margin.Dense"
+               Required="true" RequiredError="Liste : obligatoire." Class="sm:col-span-2"
+               ToStringFunc="@(c => c is null ? "" : CategoriesListeValeur.Libelle(c))">
+        @foreach (var (categorie, libelle) in CategoriesListeValeur.Toutes)
+        {
+            <MudSelectItem T="string" Value="@categorie">@libelle</MudSelectItem>
+        }
+    </MudSelect>
+    <MudTextField @bind-Value="Element.Code" Label="Code" MaxLength="30" Required="true" RequiredError="Code : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudNumericField T="int" @bind-Value="Element.Ordre" Label="Ordre d'affichage" Min="0"
+                     Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Libelle" Label="Libellé" MaxLength="200" Required="true" RequiredError="Libellé : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+</div>

@@ -1,0 +1,213 @@
+@page "/budget-programme/performance"
+@inject IIndicateurService Indicateurs
+@inject IExerciceService Exercices
+@inject IReferentielService<Programme> ServiceProgramme
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Suivi de la performance — Budget-programme</PageTitle>
+
+@*
+    Suivi de la performance (§ 3.3.7) : saisie périodique des valeurs réalisées par le
+    service financier (sur transmission des responsables), avec commentaire et
+    justification des écarts ; taux d'atteinte et statut atteint / non atteint ; validation.
+    Seules les réalisations validées entrent dans la synthèse et dans les vues de calcul.
+*@
+
+<AutoriseSi DroitsRequis="CatalogueReferentiels.LectureBudgetProgramme">
+    <PageHeader Titre="Suivi de la performance" Description="Réalisations des indicateurs par période et taux d'atteinte des cibles.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span>
+            <a href="/budget-programme" class="hover:underline">Budget-programme</a>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-6">
+        <div class="flex flex-col lg:flex-row gap-3">
+            <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+            <MudSelect T="Ulid?" Value="_periodeId" ValueChanged="ChangerPeriodeAsync" Label="Période" Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Style="min-width:180px" ToStringFunc="@(id => _periodes.FirstOrDefault(p => p.Id == id) is { } p ? NomPeriode(p) : "")">
+                @foreach (var p in _periodes.Where(p => p.Type != TypePeriode.Mois))
+                {
+                    <MudSelectItem T="Ulid?" Value="@p.Id">@NomPeriode(p)@(p.EstCloturee ? " (close)" : "")</MudSelectItem>
+                }
+            </MudSelect>
+            <ChoixReference Label="Programme (tous si vide)" Elements="_programmes" Value="_programmeId" ValueChanged="ChangerProgrammeAsync" />
+        </div>
+    </AppCard>
+
+    <MudTabs Elevation="0" Rounded="true" TabPanelsClass="pt-4">
+        <MudTabPanel Text="Réalisations de la période">
+            <AppCard PaddingCorps="false">
+                @if (_periodeId is null)
+                {
+                    <EtatVide Icone="chart-bar" Titre="Choisissez une période" Message="Trimestre, semestre ou année de l'exercice." />
+                }
+                else if (_lignes.Count == 0)
+                {
+                    <EtatVide Icone="chart-bar" Titre="Aucun indicateur actif" Message="Les indicateurs se définissent dans Budget-programme › Indicateurs." />
+                }
+                else
+                {
+                    <div class="zone-defilante">
+                        <MudSimpleTable Dense="true" Hover="true">
+                            <thead>
+                                <tr>
+                                    <th>Indicateur</th><th style="text-align:right">Cible</th><th style="text-align:right">Réalisé</th>
+                                    <th style="text-align:right">Atteinte</th><th>Statut</th><th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var l in _lignes)
+                                {
+                                    <tr>
+                                        <td>
+                                            <p class="text-sm"><span class="font-mono text-xs font-semibold">@l.Code</span> — @l.Libelle</p>
+                                            <p class="text-xs text-gray-400">@l.Programme@(l.Action is null ? "" : $" › {l.Action}") · @l.Unite · @(l.Sens == SensEvolution.BaisseAttendue ? "baisse attendue" : "hausse attendue")</p>
+                                            @if (!string.IsNullOrEmpty(l.Justification))
+                                            {
+                                                <p class="text-xs text-amber-700 mt-0.5">Écart : @l.Justification</p>
+                                            }
+                                        </td>
+                                        <td class="tabular-nums text-right">@Formats.Nombre(l.Cible)</td>
+                                        <td class="tabular-nums text-right font-semibold">@Formats.Nombre(l.Valeur)</td>
+                                        <td class="text-right whitespace-nowrap">
+                                            @if (l.Valeur is not null)
+                                            {
+                                                <AppBadge Variante="@(l.EstAtteinte switch { true => "success", false => "danger", _ => "neutral" })" Petit="true">
+                                                    @Formats.Taux(l.TauxAtteinte)
+                                                </AppBadge>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (l.Statut is { } statut)
+                                            {
+                                                <AppBadge Variante="@(statut == StatutSaisie.Valide ? "success" : "warning")" Petit="true">@LibellesBudgetProgramme.StatutSaisie[statut]</AppBadge>
+                                            }
+                                        </td>
+                                        <td class="whitespace-nowrap text-right">
+                                            @if (_peutSaisir)
+                                            {
+                                                @if (l.Statut != StatutSaisie.Valide)
+                                                {
+                                                    <AppButton Variante="outline" Taille="sm" OnClick="() => SaisirAsync(l)">Saisir</AppButton>
+                                                }
+                                                @if (l.Statut == StatutSaisie.Brouillon)
+                                                {
+                                                    <AppButton Variante="ghost" Taille="sm" OnClick="() => ChangerStatutAsync(l, true)">Valider</AppButton>
+                                                }
+                                                @if (l.Statut == StatutSaisie.Valide)
+                                                {
+                                                    <AppButton Variante="ghost" Taille="sm" OnClick="() => ChangerStatutAsync(l, false)">Rouvrir</AppButton>
+                                                }
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </div>
+                }
+            </AppCard>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Synthèse de l'exercice">
+            <AppCard PaddingCorps="false">
+                @if (_synthese.Count == 0)
+                {
+                    <EtatVide Icone="chart-bar" Titre="Aucune donnée" Message="La synthèse porte sur les réalisations validées de l'exercice." />
+                }
+                else
+                {
+                    <MudSimpleTable Dense="true" Hover="true">
+                        <thead>
+                            <tr><th>Programme</th><th style="text-align:right">Indicateurs</th><th style="text-align:right">Mesurés</th>
+                                <th style="text-align:right">Cibles atteintes</th><th style="text-align:right">Taux d'atteinte moyen</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var s in _synthese)
+                            {
+                                <tr>
+                                    <td><span class="font-mono text-xs font-semibold">@s.Programme</span> — @s.Libelle</td>
+                                    <td class="tabular-nums text-right">@s.NbIndicateurs</td>
+                                    <td class="tabular-nums text-right">@s.NbMesures</td>
+                                    <td class="tabular-nums text-right">@s.NbAtteints</td>
+                                    <td class="tabular-nums text-right font-semibold">@Formats.Taux(s.TauxAtteinteMoyen)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </AppCard>
+            <p class="text-xs text-gray-500 mt-2">
+                Dernière réalisation validée de chaque indicateur. Taux d'atteinte : réalisé / cible, ou cible / réalisé pour un indicateur à la baisse.
+            </p>
+        </MudTabPanel>
+    </MudTabs>
+</AutoriseSi>
+
+@code {
+    private static readonly string[] Mois = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+
+    private LigneExercice? _exercice;
+    private List<LignePeriode> _periodes = new();
+    private Ulid? _periodeId;
+    private Ulid? _programmeId;
+    private List<ElementListe> _programmes = new();
+    private List<LigneRealisation> _lignes = new();
+    private List<SynthesePerformance> _synthese = new();
+    private bool _peutSaisir;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutSaisir = await Droits.ADroitAsync(await UserContext.ObtenirUserIdAsync(), TypeDroit.IndicateurSaisirRealisation);
+        _programmes = await ServiceProgramme.ListerPourSelectionAsync();
+    }
+
+    private static string NomPeriode(LignePeriode p) => p.Type switch
+    {
+        TypePeriode.Trimestre => $"Trimestre {p.Numero}",
+        TypePeriode.Semestre => $"Semestre {p.Numero}",
+        TypePeriode.Annee => "Année",
+        _ => Mois[p.Numero - 1]
+    };
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        _periodes = e is null ? new() : await Exercices.ListerPeriodesAsync(e.Id);
+        _periodeId = _periodes.FirstOrDefault(p => p.Type == TypePeriode.Trimestre && !p.EstCloturee)?.Id;
+        _synthese = e is null ? new() : await Indicateurs.SyntheseAsync(e.Id);
+        await ChargerAsync();
+    }
+
+    private async Task ChangerPeriodeAsync(Ulid? id) { _periodeId = id; await ChargerAsync(); }
+    private async Task ChangerProgrammeAsync(Ulid? id) { _programmeId = id; await ChargerAsync(); }
+
+    private async Task ChargerAsync()
+        => _lignes = _periodeId is { } p ? await Indicateurs.ListerRealisationsAsync(p, _programmeId) : new();
+
+    private async Task SaisirAsync(LigneRealisation l)
+    {
+        var parametres = new DialogParameters<DialogRealisation> { { x => x.Ligne, l }, { x => x.PeriodeId, _periodeId!.Value } };
+        var dialog = await DialogService.ShowAsync<DialogRealisation>($"Réalisation : {l.Code}", parametres, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Réalisation enregistrée (brouillon).", Severity.Success);
+            await ChargerAsync();
+        }
+    }
+
+    private async Task ChangerStatutAsync(LigneRealisation l, bool valider)
+    {
+        var (ok, erreur) = valider
+            ? await Indicateurs.ValiderRealisationAsync(l.RealisationId!.Value)
+            : await Indicateurs.RouvrirRealisationAsync(l.RealisationId!.Value);
+        Snackbar.Add(ok ? (valider ? "Réalisation validée." : "Réalisation rouverte.") : erreur!, ok ? Severity.Success : Severity.Error);
+        if (!ok) return;
+        await ChargerAsync();
+        if (_exercice is not null) _synthese = await Indicateurs.SyntheseAsync(_exercice.Id);
+    }
+}

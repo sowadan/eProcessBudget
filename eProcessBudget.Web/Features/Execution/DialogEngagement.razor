@@ -1,0 +1,58 @@
+@inject IEngagementService Service
+@inject IReferentielService<Tiers> ServiceTiers
+
+@* Engagement (AE ou AD) sur une dotation : créé en brouillon, puis soumis depuis sa fiche. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="space-y-4">
+            <ChoixDotation ExerciceId="ExerciceId" Value="Saisie.DotationId" ValueChanged="v => Saisie.DotationId = v" LibelleInitial="LibelleDotation" />
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <ChoixEnum TEnum="TypeEngagement" Label="Type" Libelles="LibellesExecution.TypeEngagement" @bind-Value="Saisie.Type" />
+                <MudDatePicker Date="Date" DateChanged="d => Saisie.Date = d is { } v ? DateOnly.FromDateTime(v) : null" Label="Date"
+                               DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudNumericField T="decimal" @bind-Value="Saisie.Montant" Label="Montant" Min="0" Format="N2" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <ChoixReference Label="Bénéficiaire (facultatif)" Elements="_tiers" Value="Saisie.TiersId" ValueChanged="v => Saisie.TiersId = v" />
+                <div class="sm:col-span-2">
+                    <ChoixReference Label="Contrat (facultatif)" Elements="_contrats" Value="Saisie.ContratId" ValueChanged="v => Saisie.ContratId = v" />
+                </div>
+            </div>
+            <MudTextField @bind-Value="Saisie.Objet" Label="Objet" Lines="2" MaxLength="500" Counter="500" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public SaisieEngagement Saisie { get; set; } = new();
+    [Parameter] public Ulid ExerciceId { get; set; }
+    [Parameter] public string? LibelleDotation { get; set; }
+
+    private List<ElementListe> _tiers = new(), _contrats = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    private DateTime? Date => Saisie.Date?.ToDateTime(TimeOnly.MinValue);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _tiers = await ServiceTiers.ListerPourSelectionAsync();
+        _contrats = await Service.ListerContratsAsync();
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur, var id) = await Service.EnregistrerAsync(Saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(id));
+    }
+}

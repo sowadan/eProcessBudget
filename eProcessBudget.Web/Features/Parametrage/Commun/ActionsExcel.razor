@@ -1,0 +1,43 @@
+@typeparam T where T : EntiteOrganisme, new()
+@inject IReferentielService<T> Service
+@inject IDialogService DialogService
+@inject IJSRuntime JS
+
+@* Boutons « Modèle / export » et « Importer » d'un référentiel (page Import Excel). *@
+
+<div class="flex items-center gap-2">
+    <AppButton Variante="outline" Taille="sm" Icone="download" EnChargement="_export" OnClick="ExporterAsync">Modèle / export</AppButton>
+    @if (PeutGerer)
+    {
+        <AppButton Taille="sm" OnClick="ImporterAsync">Importer</AppButton>
+    }
+</div>
+
+@code {
+    private bool PeutGerer;
+    private bool _export;
+
+    // Chaque référentiel a ses propres droits (Paramétrage, Budget-programme…).
+    protected override async Task OnInitializedAsync() => PeutGerer = await Service.PeutGererAsync();
+
+    private async Task ExporterAsync()
+    {
+        _export = true;
+        try
+        {
+            var octets = await Service.ExporterAsync();
+            if (octets is null) return;
+            using var flux = new MemoryStream(octets);
+            using var reference = new DotNetStreamReference(flux);
+            await JS.InvokeVoidAsync("appTelechargerFlux", $"{Service.Descripteur.Cle}-{DateTime.Now:yyyyMMdd}.xlsx", reference);
+        }
+        finally
+        {
+            _export = false;
+        }
+    }
+
+    private async Task ImporterAsync()
+        => await DialogService.ShowAsync<DialogImport<T>>($"Importer : {Service.Descripteur.Titre}",
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+}

@@ -1,0 +1,27 @@
+@inherits FormulaireBase<CompteComptable>
+@inject IReferentielService<CompteComptable> ServiceCompteComptable
+
+@* Formulaire de saisie : CompteComptable. Généré à l'identique pour tous les référentiels ; les règles sont dans CatalogueReferentiels. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <MudTextField @bind-Value="Element.Numero" Label="Numéro" MaxLength="20" Required="true" RequiredError="Numéro : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudNumericField T="int" @bind-Value="Element.Classe" Label="Classe" Min="0" Max="9" HelperText="Déduite du premier chiffre si 0."
+                     Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Libelle" Label="Libellé" MaxLength="250" Required="true" RequiredError="Libellé : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+    <ChoixEnum TEnum="TypeCompte" Label="Type" Libelles="LibellesParametrage.TypeCompte" @bind-Value="Element.TypeCompte" />
+    <div><ChoixReference Label="Compte de regroupement" Elements="_comptes"
+                    Value="Element.CompteParentId" ValueChanged="v => Element.CompteParentId = v" /></div>
+    <MudSwitch T="bool" @bind-Value="Element.EstImmobilisation" Label="Compte d'immobilisation" Color="Color.Primary" Class="sm:col-span-2" />
+</div>
+
+@code {
+    private List<ElementListe> _comptes = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _comptes = await ServiceCompteComptable.ListerPourSelectionAsync();
+        _comptes.RemoveAll(e => e.Id == Element.Id);
+    }
+}

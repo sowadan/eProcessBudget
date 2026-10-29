@@ -1,0 +1,21 @@
+@page "/budget-programme/activites"
+
+<PageTitle>Budget-programme</PageTitle>
+
+<PageReferentiel T="Activite" Formulaire="typeof(FormulaireActivite)" Rubrique="Budget-programme" LienRubrique="/budget-programme"
+                 Description="Activités des actions, avec leur structure et leur nature de dépense principale.">
+    <EnTetes>
+        <MudTh>Action</MudTh>
+        <MudTh>Code</MudTh>
+        <MudTh>Libellé</MudTh>
+        <MudTh>Structure</MudTh>
+        <MudTh>Nature principale</MudTh>
+    </EnTetes>
+    <Colonnes>
+        <MudTd DataLabel="Action"><span class="text-sm text-gray-500">@context.Action.Code</span></MudTd>
+        <MudTd DataLabel="Code"><span class="font-mono text-xs font-semibold text-gray-800">@context.Code</span></MudTd>
+        <MudTd DataLabel="Libellé"><span class="text-sm text-gray-700">@context.Libelle</span></MudTd>
+        <MudTd DataLabel="Structure"><span class="text-sm text-gray-500">@(context.Structure?.Code ?? "—")</span></MudTd>
+        <MudTd DataLabel="Nature principale"><span class="text-sm text-gray-500">@(context.NatureDepensePrincipale?.Libelle ?? "—")</span></MudTd>
+    </Colonnes>
+</PageReferentiel>

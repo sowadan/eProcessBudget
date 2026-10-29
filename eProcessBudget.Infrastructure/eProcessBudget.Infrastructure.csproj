@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- TargetFramework, Nullable, ImplicitUsings : voir Directory.Build.props -->
+  <PropertyGroup>
+    <RootNamespace>eProcessBudget.Infrastructure</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Framework partagé ASP.NET Core 10 : fournit IHttpContextAccessor, Options, Logging,
+      Hosting, MemoryCache... toujours alignés sur le runtime installé. Remplace les anciens
+      packages Microsoft.Extensions.* et Microsoft.AspNetCore.Http.Abstractions 2.3.0 (obsolète).
+    -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Accès données (SQL Server). Remplacer par Npgsql / Sqlite si besoin — voir docs/09-base-de-donnees.md -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Hachage BCrypt des mots de passe (implémentation d'IPasswordHasher) -->
+    <PackageReference Include="BCrypt.Net-Next" />
+    <!-- Import / export Excel des référentiels (cahier technique § 2.1) -->
+    <PackageReference Include="ClosedXML" />
+    <!-- Export PDF des rapports (cahier technique § 2.10) -->
+    <PackageReference Include="QuestPDF" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Les tests accèdent aux services internes (constantes, fabriques) -->
+    <InternalsVisibleTo Include="eProcessBudget.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\eProcessBudget.Core\eProcessBudget.Core.csproj" />
+  </ItemGroup>
+</Project>

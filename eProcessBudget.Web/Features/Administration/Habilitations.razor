@@ -1,0 +1,296 @@
+@page "/administration/habilitations"
+@inject IHabilitationService HabilitationService
+@inject IUserContextService UserContext
+@inject IDroitService Droits
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Habilitations — Administration</PageTitle>
+
+@*
+    Habilitations : droits d'accès d'un utilisateur sur un périmètre (axe, programme,
+    action, site, structure ou tout l'organisme).
+
+    Principe des quatre yeux : une habilitation n'est active qu'après la validation du
+    responsable du service financier ET de l'administrateur SI, deux personnes distinctes.
+    Les boutons n'apparaissent qu'aux bonnes personnes ; le service revérifie chaque règle.
+*@
+
+<AutoriseSi DroitsRequis="@DroitsPage">
+
+    <PageHeader Titre="Habilitations"
+                Description="Droits de saisie et de lecture par périmètre, soumis à double validation.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a>
+            <span>/</span>
+            <span class="text-gray-700">Administration</span>
+        </BreadcrumbContent>
+        <ActionsContent>
+            @if (_peutDemander)
+            {
+                <AppButton Icone="plus" OnClick="DemanderAsync">Nouvelle demande</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    <!-- ═══ Filtres  -->
+    <AppCard ClasseSup="mb-6">
+        <div class="flex flex-col sm:flex-row gap-3 sm:items-center">
+            <MudChipSet T="string" SelectedValue="_vue" SelectedValueChanged="ChangerVueAsync"
+                        CheckMark="false" SelectionMode="SelectionMode.SingleSelection">
+                <MudChip T="string" Value="@("attente")" Color="Color.Warning" Variant="Variant.Outlined">À valider</MudChip>
+                <MudChip T="string" Value="@("actives")" Color="Color.Success" Variant="Variant.Outlined">Actives</MudChip>
+                <MudChip T="string" Value="@("toutes")" Variant="Variant.Outlined">Toutes</MudChip>
+            </MudChipSet>
+        </div>
+    </AppCard>
+
+    <!-- ═══ Liste  -->
+    <AppCard PaddingCorps="false">
+        <ChildContent>
+            @if (_chargement)
+            {
+                <div class="flex justify-center py-16">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                </div>
+            }
+            else if (_items.Count == 0)
+            {
+                <EtatVide Icone="key" Titre="Aucune habilitation"
+                          Message="@(_vue == "attente" ? "Aucune demande n'attend de validation." : "Aucune habilitation ne correspond à ce filtre.")" />
+            }
+            else
+            {
+                <div class="zone-defilante">
+                    <MudTable Items="_items" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Bénéficiaire</MudTh>
+                            <MudTh>Périmètre</MudTh>
+                            <MudTh>Accès</MudTh>
+                            <MudTh>Période</MudTh>
+                            <MudTh>Validations</MudTh>
+                            <MudTh>Statut</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+
+                        <RowTemplate>
+                            <MudTd DataLabel="Bénéficiaire">
+                                <p class="text-sm font-medium text-gray-800">@context.Beneficiaire</p>
+                                <p class="text-xs text-gray-400">
+                                    Demandée par @(context.DemandePar ?? "—") le @context.DateDemande.ToLocalTime().ToString("dd/MM/yyyy")
+                                </p>
+                            </MudTd>
+
+                            <MudTd DataLabel="Périmètre">
+                                <p class="text-xs text-gray-400">@LibellesHabilitation.Perimetre(context.TypePerimetre)</p>
+                                <p class="text-sm text-gray-700">@context.Perimetre</p>
+                            </MudTd>
+
+                            <MudTd DataLabel="Accès">
+                                <AppBadge Variante="@(context.NiveauAcces == NiveauAcces.Saisie ? "warning" : "info")" Petit="true">
+                                    @(context.NiveauAcces == NiveauAcces.Saisie ? "Saisie" : "Lecture")
+                                </AppBadge>
+                            </MudTd>
+
+                            <MudTd DataLabel="Période">
+                                <span class="text-xs text-gray-600 tabular-nums">
+                                    @context.DateDebut.ToString("dd/MM/yyyy") → @(context.DateFin?.ToString("dd/MM/yyyy") ?? "sans fin")
+                                </span>
+                            </MudTd>
+
+                            <MudTd DataLabel="Validations">
+                                <div class="text-xs space-y-0.5">
+                                    <p class="@(context.ValideurFinancier is null ? "text-gray-400" : "text-emerald-700")">
+                                        Financier : @(context.ValideurFinancier ?? "en attente")
+                                    </p>
+                                    <p class="@(context.ValideurAdminSI is null ? "text-gray-400" : "text-emerald-700")">
+                                        Admin. SI : @(context.ValideurAdminSI ?? "en attente")
+                                    </p>
+                                </div>
+                            </MudTd>
+
+                            <MudTd DataLabel="Statut">
+                                <AppBadge Variante="@LibellesHabilitation.Variante(context.Statut)">@LibellesHabilitation.Statut(context.Statut)</AppBadge>
+                                @if (!string.IsNullOrEmpty(context.MotifRejet))
+                                {
+                                    <p class="text-xs text-gray-500 mt-1 max-w-48 truncate" title="@context.MotifRejet">@context.MotifRejet</p>
+                                }
+                            </MudTd>
+
+                            <MudTd Style="text-align:right; white-space:nowrap;">
+                                @if (PeutValider(context, RoleValidation.ServiceFinancier))
+                                {
+                                    <MudTooltip Text="Valider (service financier)">
+                                        <MudIconButton Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Outlined.Paid"
+                                                       OnClick="() => ValiderAsync(context, RoleValidation.ServiceFinancier)" />
+                                    </MudTooltip>
+                                }
+                                @if (PeutValider(context, RoleValidation.AdministrateurSI))
+                                {
+                                    <MudTooltip Text="Valider (administrateur SI)">
+                                        <MudIconButton Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Outlined.VerifiedUser"
+                                                       OnClick="() => ValiderAsync(context, RoleValidation.AdministrateurSI)" />
+                                    </MudTooltip>
+                                }
+                                @if (_estValideur && LibellesHabilitation.EstEnAttente(context.Statut))
+                                {
+                                    <MudTooltip Text="Rejeter">
+                                        <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Block"
+                                                       OnClick="() => TerminerAsync(context, revocation: false)" />
+                                    </MudTooltip>
+                                }
+                                @if (_estValideur && context.Statut == StatutHabilitation.Active)
+                                {
+                                    <MudTooltip Text="Révoquer">
+                                        <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.RemoveModerator"
+                                                       OnClick="() => TerminerAsync(context, revocation: true)" />
+                                    </MudTooltip>
+                                }
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </div>
+            }
+        </ChildContent>
+
+        <PiedContent>
+            <div class="flex items-center justify-between gap-4 flex-wrap">
+                <p class="text-xs text-gray-500">@_total habilitation(s)</p>
+
+                @if (_total > _taille)
+                {
+                    <MudPagination Count="@((int)Math.Ceiling(_total / (double)_taille))"
+                                   Selected="_page" SelectedChanged="ChangerPageAsync"
+                                   Color="Color.Primary" Size="Size.Small" />
+                }
+            </div>
+        </PiedContent>
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    private const int _taille = 20;
+
+    private static readonly TypeDroit[] DroitsPage =
+        [TypeDroit.HabilitationDemander, TypeDroit.HabilitationValiderFinancier, TypeDroit.HabilitationValiderAdminSI];
+
+    private List<LigneHabilitation> _items = new();
+    private int _total;
+    private int _page = 1;
+    private bool _chargement = true;
+    private string _vue = "attente";
+
+    private Ulid _userId;
+    private bool _peutDemander;
+    private bool _valideurFinancier;
+    private bool _valideurAdminSI;
+    private bool _estValideur => _valideurFinancier || _valideurAdminSI;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userId = await UserContext.ObtenirUserIdAsync();
+        var droits = await Droits.ObtenirDroitsAsync(_userId);
+        _peutDemander      = droits.Contains(TypeDroit.HabilitationDemander);
+        _valideurFinancier = droits.Contains(TypeDroit.HabilitationValiderFinancier);
+        _valideurAdminSI   = droits.Contains(TypeDroit.HabilitationValiderAdminSI);
+
+        await ChargerAsync();
+    }
+
+    private async Task ChargerAsync()
+    {
+        _chargement = true;
+
+        var filtre = _vue switch
+        {
+            "attente" => new FiltreHabilitations(EnAttenteSeulement: true, Page: _page, Taille: _taille),
+            "actives" => new FiltreHabilitations(Statut: StatutHabilitation.Active, Page: _page, Taille: _taille),
+            _         => new FiltreHabilitations(Page: _page, Taille: _taille)
+        };
+
+        (_items, _total) = await HabilitationService.RechercherAsync(filtre);
+        _chargement = false;
+    }
+
+    private async Task ChangerVueAsync(string vue)
+    {
+        _vue = vue ?? "attente";
+        _page = 1;
+        await ChargerAsync();
+    }
+
+    private async Task ChangerPageAsync(int page)
+    {
+        _page = page;
+        await ChargerAsync();
+    }
+
+    /// <summary>Affichage du bouton : mêmes règles que le service, qui reste seul juge.</summary>
+    private bool PeutValider(LigneHabilitation h, RoleValidation role)
+    {
+        if (!LibellesHabilitation.EstEnAttente(h.Statut) || h.UtilisateurId == _userId) return false;
+
+        return role == RoleValidation.ServiceFinancier
+            ? _valideurFinancier && h.ValideurFinancierId is null && h.ValideurAdminSIId != _userId
+            : _valideurAdminSI && h.ValideurAdminSIId is null && h.ValideurFinancierId != _userId;
+    }
+
+    private async Task DemanderAsync()
+    {
+        var dialog = await DialogService.ShowAsync<DialogHabilitation>("Demande d'habilitation",
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var reponse = await dialog.Result;
+        if (reponse is null || reponse.Canceled) return;
+
+        Snackbar.Add("Demande enregistrée : les validateurs sont prévenus.", Severity.Success);
+        _vue = "attente";
+        _page = 1;
+        await ChargerAsync();
+    }
+
+    private async Task ValiderAsync(LigneHabilitation h, RoleValidation role)
+    {
+        var titre = role == RoleValidation.ServiceFinancier ? "au titre du service financier" : "au titre de l'administration du SI";
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, "Valider l'habilitation" },
+            { x => x.Message, $"Valider {titre} l'accès « {(h.NiveauAcces == NiveauAcces.Saisie ? "saisie" : "lecture")} » de {h.Beneficiaire} sur : {h.Perimetre} ?" },
+            { x => x.Libelle, "Valider" }
+        };
+        var dialog = await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres);
+        if (await dialog.Result is not { Canceled: false }) return;
+
+        var (ok, erreur) = await HabilitationService.ValiderAsync(h.Id, role);
+        if (!ok)
+        {
+            Snackbar.Add(erreur!, Severity.Error);
+            return;
+        }
+
+        Snackbar.Add("Validation enregistrée.", Severity.Success);
+        await ChargerAsync();
+    }
+
+    private async Task TerminerAsync(LigneHabilitation h, bool revocation)
+    {
+        var parametres = new DialogParameters<DialogMotif>
+        {
+            { x => x.Message, revocation
+                ? $"Révoquer l'habilitation de {h.Beneficiaire} sur : {h.Perimetre}. L'accès cesse immédiatement."
+                : $"Rejeter la demande d'habilitation de {h.Beneficiaire} sur : {h.Perimetre}." },
+            { x => x.Libelle, revocation ? "Révoquer" : "Rejeter" }
+        };
+        var dialog = await DialogService.ShowAsync<DialogMotif>(revocation ? "Révocation" : "Rejet", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var reponse = await dialog.Result;
+        if (reponse is not { Canceled: false, Data: string motif }) return;
+
+        var (ok, erreur) = revocation
+            ? await HabilitationService.RevoquerAsync(h.Id, motif)
+            : await HabilitationService.RejeterAsync(h.Id, motif);
+
+        Snackbar.Add(ok ? (revocation ? "Habilitation révoquée." : "Demande rejetée.") : erreur!,
+            ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync();
+    }
+}

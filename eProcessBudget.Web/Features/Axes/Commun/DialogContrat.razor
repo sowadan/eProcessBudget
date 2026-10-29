@@ -1,0 +1,129 @@
+@inject IContratService Service
+@inject IProjetService Projets
+@inject IReferentielService<Tiers> ServiceTiers
+@inject IReferentielService<ListeValeur> ServiceListe
+
+@*
+    Contrat d'un projet : travaux (kilométrage contractuel), prestation (type, contrat de
+    travaux contrôlé), fourniture ou convention d'appui. Un contrat pluriannuel donne lieu
+    à une AE sur sa durée et à des CP annuels (échéancier de l'engagement).
+*@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div class="sm:col-span-2">
+                <ChoixReference Label="Projet / opération" Elements="_projets" Obligatoire="true" Disabled="ProjetFixe"
+                                Value="Saisie.ProjetId" ValueChanged="ChangerProjetAsync" />
+            </div>
+            <MudSelect T="TypeContrat" Value="Saisie.Type" ValueChanged="ChangerTypeAsync" Label="Type"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(t => LibellesAxes.TypeContrat[t])">
+                @foreach (var t in LibellesAxes.TypesContrat(Axe.Code))
+                {
+                    <MudSelectItem T="TypeContrat" Value="@t">@LibellesAxes.TypeContrat[t]</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudTextField @bind-Value="Saisie.Numero" Label="Numéro" MaxLength="50" Required="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <div class="sm:col-span-2">
+                <MudTextField @bind-Value="Saisie.Objet" Label="Objet" MaxLength="500" Required="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+
+            @if (Saisie.Type == TypeContrat.Prestation)
+            {
+                <ChoixReference Label="Type de prestation" Elements="_typesPrestation" Obligatoire="true"
+                                Value="Saisie.TypePrestationId" ValueChanged="v => Saisie.TypePrestationId = v" />
+                <div class="sm:col-span-2">
+                    <ChoixReference Label="Contrat de travaux contrôlé (facultatif)" Elements="_contratsTravaux"
+                                    Value="Saisie.ContratTravauxId" ValueChanged="v => Saisie.ContratTravauxId = v" />
+                </div>
+            }
+
+            <div class="sm:col-span-2">
+                <ChoixReference Label="@(Saisie.Type == TypeContrat.ConventionAppui ? "Entité bénéficiaire" : "Titulaire (prestataire, entreprise)")"
+                                Elements="@(Saisie.Type == TypeContrat.ConventionAppui ? _entites : _prestataires)" Obligatoire="true"
+                                Value="Saisie.TitulaireId" ValueChanged="v => Saisie.TitulaireId = v" />
+            </div>
+            <ChoixEnum TEnum="StatutProjet" Label="Statut" Libelles="LibellesAxes.StatutProjet" @bind-Value="Saisie.Statut" />
+
+            <MudNumericField T="decimal" @bind-Value="Saisie.MontantInitial" Label="Montant initial" Min="0" Format="N2" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudNumericField T="decimal" @bind-Value="Saisie.MontantAvenants" Label="Total des avenants" Min="0" Format="N2" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            @if (Saisie.Type == TypeContrat.Travaux)
+            {
+                <MudNumericField T="decimal?" @bind-Value="Saisie.KmContractuels" Label="Kilométrage contractuel" Min="0" Format="0.####" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            }
+            else
+            {
+                <div></div>
+            }
+
+            <ChampDate Label="Signature" @bind-Value="Saisie.DateSignature" />
+            <ChampDate Label="Début" @bind-Value="Saisie.DateDebut" />
+            <ChampDate Label="Fin" @bind-Value="Saisie.DateFin" />
+            <div class="sm:col-span-3">
+                <MudSwitch T="bool" @bind-Value="Saisie.EstPluriannuel" Label="Contrat pluriannuel : AE sur la durée du contrat, CP annuels" Color="Color.Primary" />
+            </div>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter, EditorRequired] public AxeDepense Axe { get; set; } = AxesDepense.Entretien;
+    [Parameter] public SaisieContrat Saisie { get; set; } = new();
+
+    /// <summary>Contrat créé depuis la fiche d'un projet : le projet est imposé.</summary>
+    [Parameter] public bool ProjetFixe { get; set; }
+
+    private List<ElementListe> _projets = new(), _prestataires = new(), _entites = new(), _typesPrestation = new(), _contratsTravaux = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!LibellesAxes.TypesContrat(Axe.Code).Contains(Saisie.Type)) Saisie.Type = LibellesAxes.TypesContrat(Axe.Code)[0];
+        _projets = await Projets.ListerPourSelectionAsync(Axe);
+        _prestataires = await ServiceTiers.ListerPourSelectionAsync(t => t.TypeTiers == TypeTiers.Prestataire);
+        if (Axe == AxesDepense.Appuis) _entites = await ServiceTiers.ListerPourSelectionAsync(t => t.TypeTiers == TypeTiers.EntiteBeneficiaireAppuis);
+        if (Axe == AxesDepense.Entretien) _typesPrestation = await ServiceListe.ListerPourSelectionAsync(l => l.Categorie == CategoriesListeValeur.TypePrestation);
+        await ChargerContratsTravauxAsync();
+    }
+
+    private async Task ChangerProjetAsync(Ulid? projetId)
+    {
+        Saisie.ProjetId = projetId;
+        Saisie.ContratTravauxId = null;
+        await ChargerContratsTravauxAsync();
+    }
+
+    private async Task ChangerTypeAsync(TypeContrat type)
+    {
+        // Le titulaire d'une convention est une entité, celui des autres contrats un prestataire.
+        if ((type == TypeContrat.ConventionAppui) != (Saisie.Type == TypeContrat.ConventionAppui)) Saisie.TitulaireId = null;
+        Saisie.Type = type;
+        await ChargerContratsTravauxAsync();
+    }
+
+    private async Task ChargerContratsTravauxAsync()
+    {
+        _contratsTravaux = Saisie.Type == TypeContrat.Prestation && Saisie.ProjetId is { } projetId
+            ? (await Service.ListerPourSelectionAsync(projetId, TypeContrat.Travaux)).Where(c => c.Id != Saisie.Id).ToList()
+            : new();
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.EnregistrerAsync(Saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

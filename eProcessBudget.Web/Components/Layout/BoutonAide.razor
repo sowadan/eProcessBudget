@@ -1,0 +1,36 @@
+@using Microsoft.Extensions.Options
+@using eProcessBudget.Web.Features.Aide
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@inject IOptions<ApplicationOptions> AppOptions
+
+@*
+    Bouton d'aide de l'en-tête : visite guidée de l'écran affiché, visite de l'interface,
+    guide d'utilisation complet. Le contenu des visites est dans Features/Aide/GuidesApplication.cs.
+*@
+
+<div data-guide="aide">
+    <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Dense="true">
+        <ActivatorContent>
+            <button type="button"
+                    class="p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                    title="Aide" aria-label="Aide">
+                <div class="w-5 h-5"><AppIcon Nom="information-circle" /></div>
+            </button>
+        </ActivatorContent>
+        <ChildContent>
+            <MudMenuItem Icon="@Icons.Material.Outlined.Tour" OnClick="VisiteEcranAsync">Visite guidée de cet écran</MudMenuItem>
+            <MudMenuItem Icon="@Icons.Material.Outlined.Explore" OnClick="VisiteInterfaceAsync">Découvrir l'interface</MudMenuItem>
+            <MudDivider />
+            <MudMenuItem Icon="@Icons.Material.Outlined.MenuBook" Href="/aide">Guide d'utilisation</MudMenuItem>
+        </ChildContent>
+    </MudMenu>
+</div>
+
+@code {
+    private async Task VisiteEcranAsync()
+        => await VisitesGuidees.EcranAsync(JS, Navigation.ToBaseRelativePath(Navigation.Uri));
+
+    private async Task VisiteInterfaceAsync()
+        => await VisitesGuidees.InterfaceAsync(JS, AppOptions.Value.Nom);
+}

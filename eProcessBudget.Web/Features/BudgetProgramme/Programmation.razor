@@ -1,0 +1,329 @@
+@page "/budget-programme/programmation"
+@inject IProgrammationService Service
+@inject IReferentielService<Programme> ServiceProgramme
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Programmation — Budget-programme</PageTitle>
+
+@*
+    Programmation pluriannuelle d'un cycle (§ 3.3.5 et 3.3.6) : AE et CP par action,
+    activité, nature et source (N-1 et trois années programmées, total triennal),
+    ressources de financement, effectifs, récapitulatif du coût des programmes et équilibre
+    ressources / emplois. Saisie : Responsable Budget, cycle en brouillon, périmètre habilité.
+*@
+
+<AutoriseSi DroitsRequis="CatalogueReferentiels.LectureBudgetProgramme">
+    <PageHeader Titre="Programmation pluriannuelle" Description="AE / CP, ressources, emplois et équilibre du cycle de programmation.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span>
+            <a href="/budget-programme" class="hover:underline">Budget-programme</a>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-6">
+        <div class="flex flex-col sm:flex-row gap-3 sm:items-center">
+            <SelecteurCycle Value="_cycle" ValueChanged="ChangerCycleAsync" />
+            @if (_cycle is not null && !Modifiable)
+            {
+                <AppBadge Variante="neutral">Cycle @LibellesParametrage.De(LibellesParametrage.StatutCycle, _cycle.Statut).ToLowerInvariant() : consultation seule</AppBadge>
+            }
+        </div>
+    </AppCard>
+
+    @if (_cycle is not null)
+    {
+        <MudTabs Elevation="0" Rounded="true" TabPanelsClass="pt-4">
+            <!-- ═══ AE / CP ═════════════════════════════════════════════════════ -->
+            <MudTabPanel Text="AE / CP par action">
+                <AppCard PaddingCorps="false">
+                    <TitreContent>
+                        <div class="flex items-center justify-between gap-3 w-full">
+                            <ChoixReference Label="Programme" Elements="_programmes" Value="_programmeId" ValueChanged="ChangerProgrammeAsync" />
+                            @if (Modifiable && _programmeId is not null)
+                            {
+                                <AppButton Icone="plus" Taille="sm" OnClick="() => EditerLigneAsync(null)">Ajouter une ligne</AppButton>
+                            }
+                        </div>
+                    </TitreContent>
+                    <ChildContent>
+                        @if (_lignes.Count == 0)
+                        {
+                            <EtatVide Icone="chart-bar" Titre="Aucune programmation" Message="Ajoutez une ligne : action (et activité), nature, source, montants." />
+                        }
+                        else
+                        {
+                            <div class="zone-defilante">
+                                <MudSimpleTable Dense="true" Hover="true">
+                                    <thead>
+                                        <tr>
+                                            <th>Action / activité</th><th>Nature · source</th>
+                                            @foreach (var a in Annees) { <th class="text-right" colspan="2">@a@(a == _cycle.AnneeReference ? " (réf.)" : "")</th> }
+                                            <th class="text-right" colspan="2">Total triennal</th><th></th>
+                                        </tr>
+                                        <tr class="text-xs text-gray-500">
+                                            <th></th><th></th>
+                                            @foreach (var _ in Annees) { <th class="text-right">AE</th><th class="text-right">CP</th> }
+                                            <th class="text-right">AE</th><th class="text-right">CP</th><th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var l in _lignes)
+                                        {
+                                            <tr>
+                                                <td class="whitespace-nowrap"><span class="font-mono text-xs font-semibold">@l.Action</span>@(l.Activite is null ? "" : $" › {l.Activite}")</td>
+                                                <td class="text-xs text-gray-600">@l.Nature · @l.Source</td>
+                                                @foreach (var a in Annees)
+                                                {
+                                                    var m = l.Montants.GetValueOrDefault(a);
+                                                    <td class="tabular-nums text-right text-xs">@Formats.Montant(m.AE)</td>
+                                                    <td class="tabular-nums text-right text-xs">@Formats.Montant(m.CP)</td>
+                                                }
+                                                <td class="tabular-nums text-right text-xs font-semibold">@Formats.Montant(Triennal(l.Montants, true))</td>
+                                                <td class="tabular-nums text-right text-xs font-semibold">@Formats.Montant(Triennal(l.Montants, false))</td>
+                                                <td class="whitespace-nowrap text-right">
+                                                    @if (Modifiable)
+                                                    {
+                                                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditerLigneAsync(l)" />
+                                                        <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerLigneAsync(l)" />
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                        <tr class="font-semibold bg-gray-50">
+                                            <td colspan="2">Total du programme</td>
+                                            @foreach (var a in Annees)
+                                            {
+                                                <td class="tabular-nums text-right text-xs">@Formats.Montant(_lignes.Sum(l => l.Montants.GetValueOrDefault(a).AE))</td>
+                                                <td class="tabular-nums text-right text-xs">@Formats.Montant(_lignes.Sum(l => l.Montants.GetValueOrDefault(a).CP))</td>
+                                            }
+                                            <td class="tabular-nums text-right text-xs">@Formats.Montant(_lignes.Sum(l => Triennal(l.Montants, true)))</td>
+                                            <td class="tabular-nums text-right text-xs">@Formats.Montant(_lignes.Sum(l => Triennal(l.Montants, false)))</td>
+                                            <td></td>
+                                        </tr>
+                                    </tbody>
+                                </MudSimpleTable>
+                            </div>
+                        }
+                    </ChildContent>
+                </AppCard>
+                <p class="text-xs text-gray-500 mt-2">Les CP cumulés d'une ligne ne dépassent jamais ses AE cumulées (§ 4.2). Total triennal : N à N+2.</p>
+            </MudTabPanel>
+
+            <!-- ═══ Ressources ══════════════════════════════════════════════════ -->
+            <MudTabPanel Text="Ressources">
+                <AppCard PaddingCorps="false">
+                    <TitreContent>
+                        <div class="flex items-center justify-between w-full">
+                            <p class="font-semibold text-gray-800">Ressources de financement</p>
+                            @if (Modifiable) { <AppButton Icone="plus" Taille="sm" OnClick="() => EditerRessourceAsync(null)">Ajouter</AppButton> }
+                        </div>
+                    </TitreContent>
+                    <ChildContent>
+                        <MudSimpleTable Dense="true" Hover="true">
+                            <thead><tr><th>Nature de recette</th><th>Source</th>@foreach (var a in Annees) { <th class="text-right">@a</th> }<th></th></tr></thead>
+                            <tbody>
+                                @foreach (var r in _ressources)
+                                {
+                                    <tr>
+                                        <td class="text-sm">@r.Nature</td><td class="text-xs">@r.Source</td>
+                                        @foreach (var a in Annees) { <td class="tabular-nums text-right text-xs">@Formats.Montant(r.Montants.GetValueOrDefault(a))</td> }
+                                        <td class="text-right">@if (Modifiable) { <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditerRessourceAsync(r)" /> }</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </ChildContent>
+                </AppCard>
+
+                <AppCard Titre="Équilibre ressources / emplois" ClasseSup="mt-6" PaddingCorps="false">
+                    <MudSimpleTable Dense="true">
+                        <thead><tr><th>Année</th><th class="text-right">Ressources</th><th class="text-right">AE</th><th class="text-right">CP</th><th class="text-right">Solde (ressources − CP)</th></tr></thead>
+                        <tbody>
+                            @foreach (var e in _equilibre)
+                            {
+                                <tr>
+                                    <td>@e.Annee</td>
+                                    <td class="tabular-nums text-right">@Formats.Montant(e.Ressources)</td>
+                                    <td class="tabular-nums text-right">@Formats.Montant(e.AE)</td>
+                                    <td class="tabular-nums text-right">@Formats.Montant(e.CP)</td>
+                                    <td class="tabular-nums text-right font-semibold @(e.Solde < 0 ? "text-red-700" : "text-emerald-700")">@Formats.Montant(e.Solde)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </AppCard>
+            </MudTabPanel>
+
+            <!-- ═══ Emplois ═════════════════════════════════════════════════════ -->
+            <MudTabPanel Text="Emplois">
+                <AppCard PaddingCorps="false">
+                    <TitreContent>
+                        <div class="flex items-center justify-between w-full">
+                            <p class="font-semibold text-gray-800">Effectifs par programme et catégorie d'emplois</p>
+                            @if (Modifiable) { <AppButton Icone="plus" Taille="sm" OnClick="() => EditerEmploiAsync(null)">Ajouter</AppButton> }
+                        </div>
+                    </TitreContent>
+                    <ChildContent>
+                        <MudSimpleTable Dense="true" Hover="true">
+                            <thead><tr><th>Programme</th><th>Catégorie</th>@foreach (var a in Annees) { <th class="text-right">@a</th> }<th></th></tr></thead>
+                            <tbody>
+                                @foreach (var e in _emplois)
+                                {
+                                    <tr>
+                                        <td class="font-mono text-xs font-semibold">@e.Programme</td><td>@e.Categorie</td>
+                                        @foreach (var a in Annees) { <td class="tabular-nums text-right">@e.Effectifs.GetValueOrDefault(a)</td> }
+                                        <td class="text-right">@if (Modifiable) { <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditerEmploiAsync(e)" /> }</td>
+                                    </tr>
+                                }
+                                <tr class="font-semibold bg-gray-50">
+                                    <td colspan="2">Total</td>
+                                    @foreach (var a in Annees) { <td class="tabular-nums text-right">@_emplois.Sum(e => e.Effectifs.GetValueOrDefault(a))</td> }
+                                    <td></td>
+                                </tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    </ChildContent>
+                </AppCard>
+
+                <AppCard Titre="Effectifs et dépenses de personnel (CP, nature « Personnel »)" ClasseSup="mt-6" PaddingCorps="false">
+                    <MudSimpleTable Dense="true">
+                        <thead><tr><th>Programme</th>@foreach (var a in Annees) { <th class="text-right">@a</th> }</tr></thead>
+                        <tbody>
+                            @foreach (var p in _personnel)
+                            {
+                                <tr>
+                                    <td class="font-mono text-xs font-semibold">@p.Programme</td>
+                                    @foreach (var a in Annees)
+                                    {
+                                        var v = p.Annees.GetValueOrDefault(a);
+                                        <td class="tabular-nums text-right text-xs">@v.Effectif agents · @Formats.Montant(v.CPPersonnel)</td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </AppCard>
+            </MudTabPanel>
+
+            <!-- ═══ Récapitulatif ═══════════════════════════════════════════════ -->
+            <MudTabPanel Text="Coût des programmes">
+                <AppCard PaddingCorps="false">
+                    @if (_recap.Count == 0)
+                    {
+                        <EtatVide Icone="chart-bar" Titre="Aucune programmation" Message="Le récapitulatif se construit à partir des AE / CP saisis." />
+                    }
+                    else
+                    {
+                        <div class="zone-defilante">
+                            <MudSimpleTable Dense="true" Hover="true">
+                                <thead>
+                                    <tr><th>Programme / action / nature</th>@foreach (var a in Annees) { <th class="text-right">CP @a</th> }<th class="text-right">AE triennal</th><th class="text-right">CP triennal</th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var r in _recap)
+                                    {
+                                        var programme = r.Action is null && r.Nature is null;
+                                        <tr class="@(programme ? "font-semibold bg-gray-50" : "")">
+                                            <td class="@(programme ? "" : "pl-8 text-sm")">
+                                                @if (programme) { <span class="font-mono">@r.Programme</span> }
+                                                else if (r.Action is not null) { <span>Action @r.Action</span> }
+                                                else { <span class="text-gray-600">@r.Nature · @r.Source <span class="text-xs text-gray-400">(@LibellesParametrage.De(LibellesParametrage.GroupeNature, r.Groupe!.Value))</span></span> }
+                                            </td>
+                                            @foreach (var a in Annees) { <td class="tabular-nums text-right text-xs">@Formats.Montant(r.Montants.GetValueOrDefault(a).CP)</td> }
+                                            <td class="tabular-nums text-right text-xs">@Formats.Montant(Triennal(r.Montants, true))</td>
+                                            <td class="tabular-nums text-right text-xs">@Formats.Montant(Triennal(r.Montants, false))</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </div>
+                    }
+                </AppCard>
+            </MudTabPanel>
+        </MudTabs>
+    }
+</AutoriseSi>
+
+@code {
+    private LigneCycle? _cycle;
+    private Ulid? _programmeId;
+    private List<ElementListe> _programmes = new();
+    private List<LigneProgrammationFinanciere> _lignes = new();
+    private List<LigneRessource> _ressources = new();
+    private List<LigneEmploi> _emplois = new();
+    private List<LigneRecapitulatif> _recap = new();
+    private List<EquilibreAnnee> _equilibre = new();
+    private List<EffectifsEtPersonnel> _personnel = new();
+    private bool _peutSaisir;
+
+    private bool Modifiable => _peutSaisir && _cycle?.Statut == StatutCycle.Brouillon;
+    private int[] Annees => _cycle is null ? [] : Enumerable.Range(_cycle.AnneeReference, _cycle.AnneeFin - _cycle.AnneeReference + 1).ToArray();
+
+    private decimal Triennal(IReadOnlyDictionary<int, MontantsAECP> m, bool ae)
+        => CalculsBudgetProgramme.TotalTriennal(_cycle!.AnneeBase, m.Select(x => (x.Key, ae ? x.Value.AE : x.Value.CP)));
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutSaisir = await Droits.ADroitAsync(await UserContext.ObtenirUserIdAsync(), TypeDroit.ProgrammationSaisir);
+        _programmes = await ServiceProgramme.ListerPourSelectionAsync();
+        _programmeId = _programmes.FirstOrDefault()?.Id;
+    }
+
+    private async Task ChangerCycleAsync(LigneCycle? c) { _cycle = c; await ChargerToutAsync(); }
+    private async Task ChangerProgrammeAsync(Ulid? id) { _programmeId = id; await ChargerLignesAsync(); }
+
+    private async Task ChargerLignesAsync()
+        => _lignes = _cycle is not null && _programmeId is { } p ? await Service.ListerFinancierAsync(_cycle.Id, p) : new();
+
+    private async Task ChargerToutAsync()
+    {
+        if (_cycle is null) return;
+        await ChargerLignesAsync();
+        _ressources = await Service.ListerRessourcesAsync(_cycle.Id);
+        _emplois = await Service.ListerEmploisAsync(_cycle.Id);
+        _recap = await Service.RecapitulatifAsync(_cycle.Id);
+        _equilibre = await Service.EquilibreAsync(_cycle.Id);
+        _personnel = await Service.EffectifsEtPersonnelAsync(_cycle.Id);
+    }
+
+    private async Task EditerLigneAsync(LigneProgrammationFinanciere? ligne)
+    {
+        var parametres = new DialogParameters<DialogLigneFinanciere>
+        {
+            { x => x.Cycle, _cycle! }, { x => x.ProgrammeId, _programmeId!.Value }, { x => x.Ligne, ligne }
+        };
+        var dialog = await DialogService.ShowAsync<DialogLigneFinanciere>(ligne is null ? "Nouvelle ligne AE / CP" : "Modifier la ligne", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) { Snackbar.Add("Programmation enregistrée.", Severity.Success); await ChargerToutAsync(); }
+    }
+
+    private async Task SupprimerLigneAsync(LigneProgrammationFinanciere l)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, $"Supprimer la ligne {l.Action} · {l.Nature} · {l.Source}" }, { x => x.Message, "Les montants de toutes les années sont supprimés." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+        var (ok, erreur) = await Service.SupprimerFinancierAsync(_cycle!.Id, l.ActionId, l.ActiviteId, l.NatureDepenseId, l.SourceFinancementId);
+        Snackbar.Add(ok ? "Ligne supprimée." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerToutAsync();
+    }
+
+    private async Task EditerRessourceAsync(LigneRessource? r)
+    {
+        var parametres = new DialogParameters<DialogRessource> { { x => x.Cycle, _cycle! }, { x => x.Ligne, r } };
+        var dialog = await DialogService.ShowAsync<DialogRessource>("Ressource programmée", parametres, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) { Snackbar.Add("Ressource enregistrée.", Severity.Success); await ChargerToutAsync(); }
+    }
+
+    private async Task EditerEmploiAsync(LigneEmploi? e)
+    {
+        var parametres = new DialogParameters<DialogEmploi> { { x => x.Cycle, _cycle! }, { x => x.Ligne, e } };
+        var dialog = await DialogService.ShowAsync<DialogEmploi>("Effectifs programmés", parametres, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) { Snackbar.Add("Effectifs enregistrés.", Severity.Success); await ChargerToutAsync(); }
+    }
+}

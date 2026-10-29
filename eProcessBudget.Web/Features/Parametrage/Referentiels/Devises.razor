@@ -1,0 +1,47 @@
+@page "/parametrage/devises"
+@inject IDialogService DialogService
+
+<PageTitle>Paramétrage</PageTitle>
+
+@*
+    Devises et taux de change (ressources externes). La devise de référence se choisit
+    dans les paramètres de l'organisme.
+*@
+
+<PageReferentiel T="Devise" Formulaire="typeof(FormulaireDevise)"
+                 Description="Devises utilisées et leurs taux de change vers la devise de référence (choisie dans les paramètres de l'organisme).">
+    <EnTetes>
+        <MudTh>Code ISO</MudTh>
+        <MudTh>Libellé</MudTh>
+        <MudTh>Symbole</MudTh>
+        <MudTh></MudTh>
+    </EnTetes>
+    <Colonnes>
+        <MudTd DataLabel="Code ISO"><span class="font-mono text-xs font-semibold text-gray-800">@context.CodeIso</span></MudTd>
+        <MudTd DataLabel="Libellé"><span class="text-sm text-gray-700">@context.Libelle</span></MudTd>
+        <MudTd DataLabel="Symbole"><span class="text-sm text-gray-500">@context.Symbole</span></MudTd>
+        <MudTd>
+            @if (context.EstReference)
+            {
+                <AppBadge Variante="info" Petit="true">Devise de référence</AppBadge>
+            }
+        </MudTd>
+    </Colonnes>
+    <ActionsSupplementaires>
+        @if (!context.EstReference)
+        {
+            <MudTooltip Text="Taux de change">
+                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.CurrencyExchange" OnClick="() => TauxAsync(context)" />
+            </MudTooltip>
+        }
+    </ActionsSupplementaires>
+</PageReferentiel>
+
+@code {
+    private async Task TauxAsync(Devise devise)
+    {
+        var parametres = new DialogParameters<DialogTauxChange> { { x => x.Devise, devise } };
+        await DialogService.ShowAsync<DialogTauxChange>($"Taux de change : {devise.CodeIso}", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+    }
+}

@@ -1,0 +1,45 @@
+@page "/parametrage/sites"
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Paramétrage</PageTitle>
+
+@*
+    Sites géographiques (siège, postes de péage et de pesage), avec les collectivités
+    locales de leur zone d'implantation (C.2.8).
+*@
+
+<PageReferentiel T="Site" Formulaire="typeof(FormulaireSite)"
+                 Description="Siège, postes de péage et de pesage, avec leur localisation et leurs collectivités locales.">
+    <EnTetes>
+        <MudTh>Code</MudTh>
+        <MudTh>Nom</MudTh>
+        <MudTh>Type</MudTh>
+        <MudTh>Localisation</MudTh>
+        <MudTh>Mise en service</MudTh>
+    </EnTetes>
+    <Colonnes>
+        <MudTd DataLabel="Code"><span class="font-mono text-xs font-semibold text-gray-800">@context.Code</span></MudTd>
+        <MudTd DataLabel="Nom"><span class="text-sm text-gray-700">@context.Nom</span></MudTd>
+        <MudTd DataLabel="Type"><span class="text-sm text-gray-500">@LibellesParametrage.De(LibellesParametrage.TypeSite, context.TypeSite)</span></MudTd>
+        <MudTd DataLabel="Localisation">
+            <span class="text-sm text-gray-500">@string.Join(" · ", new[] { context.Region, context.Prefecture, context.Commune }.Where(v => !string.IsNullOrEmpty(v)))</span>
+        </MudTd>
+        <MudTd DataLabel="Mise en service"><span class="text-xs text-gray-500 tabular-nums">@context.DateMiseEnService?.ToString("dd/MM/yyyy")</span></MudTd>
+    </Colonnes>
+    <ActionsSupplementaires>
+        <MudTooltip Text="Collectivités locales">
+            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Groups" OnClick="() => CollectivitesAsync(context)" />
+        </MudTooltip>
+    </ActionsSupplementaires>
+</PageReferentiel>
+
+@code {
+    private async Task CollectivitesAsync(Site site)
+    {
+        var parametres = new DialogParameters<DialogCollectivitesSite> { { x => x.SiteId, site.Id } };
+        var dialog = await DialogService.ShowAsync<DialogCollectivitesSite>($"Collectivités du site « {site.Nom} »", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) Snackbar.Add("Collectivités enregistrées.", Severity.Success);
+    }
+}

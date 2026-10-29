@@ -1,0 +1,48 @@
+@inject IPrevisionRecetteService Service
+
+@* Révision d'une prévision de recette (exercice ouvert) : nouveau montant retenu et motif obligatoire. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Révision impossible">@_erreur</AppAlert></div>
+        }
+        <p class="text-sm text-gray-600 mb-4">
+            Prévision initiale @Formats.Montant(Prevision.Montants.PrevisionInitiale) ; retenue aujourd'hui @Formats.Montant(Prevision.Montants.PrevisionRetenue) ;
+            encaissé @Formats.Montant(Prevision.Montants.Encaisse).
+        </p>
+        <div class="grid grid-cols-1 gap-4">
+            <MudNumericField T="decimal" @bind-Value="_montant" Label="Prévision révisée" Min="0" Format="N2" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField @bind-Value="_motif" Label="Motif de la révision" Lines="3" MaxLength="500" Counter="500" Required="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Réviser</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter, EditorRequired] public LignePrevision Prevision { get; set; } = null!;
+
+    private decimal _montant;
+    private string _motif = "";
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override void OnInitialized()
+    {
+        _montant = Prevision.Montants.PrevisionRetenue;
+        _motif = Prevision.MotifRevision ?? "";
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.ReviserAsync(Prevision.Id, _montant, _motif);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

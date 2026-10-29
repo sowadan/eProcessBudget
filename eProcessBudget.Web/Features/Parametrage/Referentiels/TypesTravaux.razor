@@ -1,0 +1,21 @@
+@page "/parametrage/types-travaux"
+
+<PageTitle>Paramétrage</PageTitle>
+
+@* Référentiel TypeTravaux : colonnes de la liste. Tout le reste (droits, filtres, saisie, Excel) vient de PageReferentiel. *@
+
+<PageReferentiel T="TypeTravaux" Formulaire="typeof(FormulaireTypeTravaux)"
+                 Description="Types de travaux d'entretien, chacun avec sa prestation de contrôle.">
+    <EnTetes>
+        <MudTh>Code</MudTh>
+        <MudTh>Libellé</MudTh>
+        <MudTh>Type de voie</MudTh>
+        <MudTh>Nature</MudTh>
+    </EnTetes>
+    <Colonnes>
+        <MudTd DataLabel="Code"><span class="font-mono text-xs font-semibold text-gray-800">@context.Code</span></MudTd>
+        <MudTd DataLabel="Libellé"><span class="text-sm text-gray-700">@context.Libelle</span></MudTd>
+        <MudTd DataLabel="Type de voie"><span class="text-sm text-gray-500">@(context.TypeVoie?.Libelle ?? "—")</span></MudTd>
+        <MudTd DataLabel="Nature"><span class="text-sm text-gray-500">@(context.EstPrestationControle ? $"Contrôle de {context.TypeTravauxControle?.Code}" : "Travaux")</span></MudTd>
+    </Colonnes>
+</PageReferentiel>

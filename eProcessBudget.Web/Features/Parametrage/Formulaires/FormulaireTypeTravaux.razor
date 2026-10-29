@@ -1,0 +1,31 @@
+@inherits FormulaireBase<TypeTravaux>
+@inject IReferentielService<ListeValeur> ServiceListeValeur
+@inject IReferentielService<TypeTravaux> ServiceTypeTravaux
+
+@* Formulaire de saisie : TypeTravaux. Généré à l'identique pour tous les référentiels ; les règles sont dans CatalogueReferentiels. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <MudTextField @bind-Value="Element.Code" Label="Code" MaxLength="20" Required="true" RequiredError="Code : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudNumericField T="int" @bind-Value="Element.Ordre" Label="Ordre d'affichage" Min="0"
+                     Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Libelle" Label="Libellé" MaxLength="200" Required="true" RequiredError="Libellé : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+    <div class="sm:col-span-2"><ChoixReference Label="Type de voie" Elements="_voies"
+                    Value="Element.TypeVoieId" ValueChanged="v => Element.TypeVoieId = v" /></div>
+    <MudSwitch T="bool" @bind-Value="Element.EstPrestationControle" Label="Prestation de contrôle (et non travaux)" Color="Color.Primary" Class="sm:col-span-2" />
+    <div class="sm:col-span-2"><ChoixReference Label="Travaux contrôlés" Elements="_travaux" Disabled="@(!Element.EstPrestationControle)"
+                    Value="Element.TypeTravauxControleId" ValueChanged="v => Element.TypeTravauxControleId = v" /></div>
+</div>
+
+@code {
+    private List<ElementListe> _voies = new();
+    private List<ElementListe> _travaux = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _voies = await ServiceListeValeur.ListerPourSelectionAsync(l => l.Categorie == CategoriesListeValeur.TypeVoie);
+        _travaux = await ServiceTypeTravaux.ListerPourSelectionAsync(t => !t.EstPrestationControle);
+        _travaux.RemoveAll(e => e.Id == Element.Id);
+    }
+}

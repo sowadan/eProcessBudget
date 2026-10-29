@@ -1,0 +1,254 @@
+@page "/parametrage/exercices"
+@inject IExerciceService ExerciceService
+@inject ICycleProgrammationService CycleService
+@inject IReferentielService<Axe> ServiceAcces
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Exercices et cycles — Paramétrage</PageTitle>
+
+@*
+    Exercices budgétaires (En préparation → Ouvert → Clôturé) et leurs 19 périodes ;
+    cycles de programmation triennale (N-1 référence, N base, N+1, N+2). La clôture d'un
+    exercice (reliquats, encours, reports) relève du module Exécution.
+*@
+
+<AutoriseSi DroitsRequis="new[] { TypeDroit.ParametrageLire, TypeDroit.ParametrageGerer }">
+    <PageHeader Titre="Exercices et cycles" Description="Exercices budgétaires, périodes de saisie et cycles de programmation triennale.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span>
+            <a href="/parametrage" class="hover:underline">Paramétrage</a>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <MudTabs Elevation="0" Rounded="true" TabPanelsClass="pt-4" ApplyEffectsToContainer="true">
+        <!-- ═══ Exercices ═════════════════════════════════════════════════════ -->
+        <MudTabPanel Text="Exercices">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <AppCard PaddingCorps="false" ClasseSup="lg:col-span-2">
+                    <TitreContent>
+                        <div class="flex items-center justify-between gap-3 w-full">
+                            <p class="font-semibold text-gray-800">Exercices</p>
+                            @if (_peutGerer)
+                            {
+                                <div class="flex items-center gap-2">
+                                    <MudNumericField T="int" @bind-Value="_nouvelleAnnee" Min="2000" Max="2100" Variant="Variant.Outlined"
+                                                     Margin="Margin.Dense" Style="width:110px" />
+                                    <AppButton Icone="plus" Taille="sm" OnClick="CreerExerciceAsync">Créer</AppButton>
+                                </div>
+                            }
+                        </div>
+                    </TitreContent>
+                    <ChildContent>
+                        @if (_exercices.Count == 0)
+                        {
+                            <EtatVide Icone="clock" Titre="Aucun exercice" Message="Créez l'exercice de l'année : ses 19 périodes sont générées." />
+                        }
+                        else
+                        {
+                            <MudTable Items="_exercices" Dense="true" Hover="true" Elevation="0" OnRowClick="@((TableRowClickEventArgs<LigneExercice> e) => ChoisirAsync(e.Item!))"
+                                      RowClass="cursor-pointer" RowClassFunc="@((e, _) => e.Id == _exerciceChoisi?.Id ? "bg-blue-50" : "")">
+                                <HeaderContent>
+                                    <MudTh>Année</MudTh><MudTh>Statut</MudTh><MudTh>Cycle</MudTh><MudTh>Mois clos</MudTh><MudTh></MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd><span class="font-semibold tabular-nums">@context.Annee</span></MudTd>
+                                    <MudTd>
+                                        <AppBadge Variante="@(context.Statut switch { StatutExercice.Ouvert => "success", StatutExercice.Cloture => "neutral", _ => "warning" })" Petit="true">
+                                            @LibellesParametrage.De(LibellesParametrage.StatutExercice, context.Statut)
+                                        </AppBadge>
+                                    </MudTd>
+                                    <MudTd><span class="text-sm text-gray-500">@(context.Cycle ?? "—")</span></MudTd>
+                                    <MudTd><span class="text-sm tabular-nums">@context.NbMoisClotures / 12</span></MudTd>
+                                    <MudTd Style="text-align:right; white-space:nowrap">
+                                        @if (_peutGerer && context.Statut == StatutExercice.EnPreparation)
+                                        {
+                                            <AppButton Variante="outline" Taille="sm" OnClick="() => OuvrirAsync(context)">Ouvrir</AppButton>
+                                            <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerExerciceAsync(context)" />
+                                        }
+                                    </MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        }
+                    </ChildContent>
+                </AppCard>
+
+                <AppCard Titre="@(_exerciceChoisi is null ? "Périodes" : $"Périodes {_exerciceChoisi.Annee}")"
+                         SousTitre="Une période close refuse toute saisie.">
+                    @if (_exerciceChoisi is null)
+                    {
+                        <p class="text-sm text-gray-400">Choisissez un exercice.</p>
+                    }
+                    else
+                    {
+                        @foreach (var groupe in _periodes.GroupBy(p => p.Type))
+                        {
+                            <p class="text-xs font-bold uppercase tracking-wider text-gray-500 mt-3 mb-1">@LibellesParametrage.De(LibellesParametrage.TypePeriode, groupe.Key)</p>
+                            <div class="flex flex-wrap gap-1.5">
+                                @foreach (var p in groupe)
+                                {
+                                    var modifiable = _peutGerer && _exerciceChoisi.Statut == StatutExercice.Ouvert;
+                                    <button type="button" disabled="@(!modifiable)" @onclick="() => BasculerPeriodeAsync(p)"
+                                            title="@($"{p.DateDebut:dd/MM} – {p.DateFin:dd/MM/yyyy}{(modifiable ? (p.EstCloturee ? " · cliquer pour rouvrir" : " · cliquer pour clore") : "")}")"
+                                            class="px-2 py-1 rounded text-xs font-medium border @(p.EstCloturee ? "bg-gray-100 text-gray-500 border-gray-200 line-through" : "bg-white text-gray-700 border-gray-300") @(modifiable ? "hover:border-gray-500" : "cursor-default")">
+                                        @NomPeriode(p)
+                                    </button>
+                                }
+                            </div>
+                        }
+                    }
+                </AppCard>
+            </div>
+        </MudTabPanel>
+
+        <!-- ═══ Cycles ════════════════════════════════════════════════════════ -->
+        <MudTabPanel Text="Cycles de programmation">
+            <AppCard PaddingCorps="false">
+                <TitreContent>
+                    <div class="flex items-center justify-between gap-3 w-full">
+                        <p class="font-semibold text-gray-800">Cycles triennaux glissants</p>
+                        @if (_peutGerer)
+                        {
+                            <div class="flex items-center gap-2">
+                                <MudNumericField T="int" @bind-Value="_nouvelleBase" Label="Année de base" Min="2000" Max="2100"
+                                                 Variant="Variant.Outlined" Margin="Margin.Dense" Style="width:140px" />
+                                <AppButton Icone="plus" Taille="sm" OnClick="CreerCycleAsync">Créer</AppButton>
+                            </div>
+                        }
+                    </div>
+                </TitreContent>
+                <ChildContent>
+                    @if (_cycles.Count == 0)
+                    {
+                        <EtatVide Icone="clock" Titre="Aucun cycle" Message="Créez le cycle dont l'année de base est l'exercice à préparer." />
+                    }
+                    else
+                    {
+                        <MudTable Items="_cycles" Dense="true" Hover="true" Elevation="0">
+                            <HeaderContent>
+                                <MudTh>Libellé</MudTh><MudTh>Référence (N-1)</MudTh><MudTh>Base (N)</MudTh><MudTh>Projections</MudTh>
+                                <MudTh>Statut</MudTh><MudTh>Reconduit de</MudTh><MudTh></MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd><span class="text-sm font-medium text-gray-800">@context.Libelle</span></MudTd>
+                                <MudTd><span class="tabular-nums">@context.AnneeReference</span></MudTd>
+                                <MudTd><span class="tabular-nums font-semibold">@context.AnneeBase</span></MudTd>
+                                <MudTd><span class="tabular-nums">@(context.AnneeBase + 1), @context.AnneeFin</span></MudTd>
+                                <MudTd>
+                                    <AppBadge Variante="@(context.Statut switch { StatutCycle.Valide => "success", StatutCycle.Archive => "neutral", _ => "warning" })" Petit="true">
+                                        @LibellesParametrage.De(LibellesParametrage.StatutCycle, context.Statut)
+                                    </AppBadge>
+                                </MudTd>
+                                <MudTd><span class="text-sm text-gray-500">@(context.CyclePrecedent ?? "—")</span></MudTd>
+                                <MudTd Style="text-align:right; white-space:nowrap">
+                                    @if (_peutGerer)
+                                    {
+                                        @if (context.Statut == StatutCycle.Brouillon)
+                                        {
+                                            <AppButton Variante="outline" Taille="sm" OnClick="@(() => ActionCycleAsync(context, CycleService.ValiderAsync, "Cycle validé."))">Valider</AppButton>
+                                            <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete"
+                                                           OnClick="@(() => ActionCycleAsync(context, CycleService.SupprimerAsync, "Cycle supprimé."))" />
+                                        }
+                                        else if (context.Statut == StatutCycle.Valide)
+                                        {
+                                            <AppButton Variante="outline" Taille="sm" OnClick="@(() => ActionCycleAsync(context, CycleService.ReconduireAsync, "Cycle suivant créé en brouillon."))">Reconduire</AppButton>
+                                            <AppButton Variante="ghost" Taille="sm" OnClick="@(() => ActionCycleAsync(context, CycleService.ArchiverAsync, "Cycle archivé."))">Archiver</AppButton>
+                                        }
+                                    }
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                </ChildContent>
+            </AppCard>
+        </MudTabPanel>
+    </MudTabs>
+</AutoriseSi>
+
+@code {
+    private static readonly string[] Mois =
+        ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+
+    private List<LigneExercice> _exercices = new();
+    private List<LignePeriode> _periodes = new();
+    private List<LigneCycle> _cycles = new();
+    private LigneExercice? _exerciceChoisi;
+    private bool _peutGerer;
+    private int _nouvelleAnnee = DateTime.Today.Year + 1;
+    private int _nouvelleBase = DateTime.Today.Year + 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutGerer = await ServiceAcces.PeutGererAsync();
+        await ChargerAsync();
+    }
+
+    private async Task ChargerAsync()
+    {
+        _exercices = await ExerciceService.ListerAsync();
+        _cycles = await CycleService.ListerAsync();
+        _exerciceChoisi = _exercices.FirstOrDefault(e => e.Id == _exerciceChoisi?.Id) ?? _exercices.FirstOrDefault();
+        _periodes = _exerciceChoisi is null ? new() : await ExerciceService.ListerPeriodesAsync(_exerciceChoisi.Id);
+    }
+
+    private async Task ChoisirAsync(LigneExercice exercice)
+    {
+        _exerciceChoisi = exercice;
+        _periodes = await ExerciceService.ListerPeriodesAsync(exercice.Id);
+    }
+
+    private static string NomPeriode(LignePeriode p) => p.Type switch
+    {
+        TypePeriode.Mois => Mois[p.Numero - 1][..3] + ".",
+        TypePeriode.Trimestre => $"T{p.Numero}",
+        TypePeriode.Semestre => $"S{p.Numero}",
+        _ => "Année"
+    };
+
+    private async Task Signaler((bool Ok, string? Erreur) r, string succes)
+    {
+        Snackbar.Add(r.Ok ? succes : r.Erreur!, r.Ok ? Severity.Success : Severity.Error);
+        if (r.Ok) await ChargerAsync();
+    }
+
+    private async Task CreerExerciceAsync()
+        => await Signaler(await ExerciceService.CreerAsync(_nouvelleAnnee), $"Exercice {_nouvelleAnnee} créé avec ses 19 périodes.");
+
+    private async Task OuvrirAsync(LigneExercice e)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, $"Ouvrir l'exercice {e.Annee}" },
+            { x => x.Message, "La saisie budgétaire devient possible sur ses périodes." },
+            { x => x.Libelle, "Ouvrir" }
+        };
+        var dialog = await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres);
+        if (await dialog.Result is not { Canceled: false }) return;
+        await Signaler(await ExerciceService.OuvrirAsync(e.Id), $"Exercice {e.Annee} ouvert.");
+    }
+
+    private async Task SupprimerExerciceAsync(LigneExercice e)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, $"Supprimer l'exercice {e.Annee}" },
+            { x => x.Message, "L'exercice et ses périodes sont supprimés, s'ils ne sont pas utilisés." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        var dialog = await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres);
+        if (await dialog.Result is not { Canceled: false }) return;
+        await Signaler(await ExerciceService.SupprimerAsync(e.Id), "Exercice supprimé.");
+    }
+
+    private async Task BasculerPeriodeAsync(LignePeriode p)
+    {
+        var r = await ExerciceService.ChangerCloturePeriodeAsync(p.Id, !p.EstCloturee);
+        await Signaler(r, p.EstCloturee ? $"{NomPeriode(p)} rouvert(e) à la saisie." : $"{NomPeriode(p)} close à la saisie.");
+    }
+
+    private async Task CreerCycleAsync()
+        => await Signaler(await CycleService.CreerAsync(_nouvelleBase, null), "Cycle créé en brouillon.");
+
+    private async Task ActionCycleAsync(LigneCycle c, Func<Ulid, Task<(bool Ok, string? Erreur)>> action, string succes)
+        => await Signaler(await action(c.Id), succes);
+}

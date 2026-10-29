@@ -1,0 +1,14 @@
+@inherits FormulaireBase<Axe>
+
+@* Formulaire de saisie : Axe. Généré à l'identique pour tous les référentiels ; les règles sont dans CatalogueReferentiels. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <MudTextField @bind-Value="Element.Code" Label="Code" MaxLength="20" Required="true" RequiredError="Code : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Libelle" Label="Libellé" MaxLength="100" Required="true" RequiredError="Libellé : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <ChoixEnum TEnum="TypeAxe" Label="Type" Libelles="LibellesParametrage.TypeAxe" @bind-Value="Element.TypeAxe" />
+    <ChoixEnum TEnum="Section" Label="Section" Libelles="LibellesParametrage.Section" @bind-Value="Element.Section" />
+    <MudNumericField T="int" @bind-Value="Element.Ordre" Label="Ordre d'affichage" Min="0"
+                     Variant="Variant.Outlined" Margin="Margin.Dense" />
+</div>

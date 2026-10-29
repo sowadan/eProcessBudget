@@ -1,0 +1,226 @@
+@page "/recettes/factures-emises"
+@inject IEmissionRecetteService Service
+@inject IPrevisionRecetteService Previsions
+@inject IExerciceService Exercices
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Factures émises — Recettes</PageTitle>
+
+@*
+    Factures émises (titres de recette) et leur recouvrement, base du compte sur chiffres des
+    recettes (réponse du métier C.2.9) : % d'exécution = émis / prévision ajustée ; % de
+    recouvrement = recouvré (encaissé) / émis ; reste à recouvrer = émis − recouvré.
+*@
+
+<AutoriseSi DroitsRequis="AccesRecettes.Lecture">
+    <PageHeader Titre="Factures émises" Description="Droits constatés par prévision, et leur recouvrement par les encaissements.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><a href="/recettes" class="hover:underline">Recettes</a>
+        </BreadcrumbContent>
+        <ActionsContent>
+            @if (Saisissable)
+            {
+                <AppButton Icone="plus" OnClick="() => EditerAsync(null)">Nouvelle facture émise</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+        @if (_exercice is { Statut: not StatutExercice.Ouvert })
+        {
+            <p class="text-xs text-gray-500 mt-3">Les factures se saisissent sur un exercice ouvert.</p>
+        }
+    </AppCard>
+
+    @if (_exercice is not null)
+    {
+        <AppCard ClasseSup="mb-4" PaddingCorps="false" Titre="Exécution et recouvrement par prévision" SousTitre="Un clic sur une ligne filtre le journal.">
+            @if (_previsions.Count == 0)
+            {
+                <EtatVide Icone="collection" Titre="Aucune prévision" />
+            }
+            else
+            {
+                <div class="overflow-x-auto">
+                    <MudSimpleTable Dense="true" Hover="true">
+                        <thead>
+                            <tr>
+                                <th>Prévision</th><th class="text-right">Prévision ajustée</th><th class="text-right">Émis</th><th class="text-right">% exéc.</th>
+                                <th class="text-right">Recouvré</th><th class="text-right">% rec.</th><th class="text-right">Reste à recouvrer</th><th class="text-right">% RAR</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var p in _previsions)
+                            {
+                                <tr class="cursor-pointer @(_filtre.PrevisionRecetteId == p.Id ? "bg-blue-50" : "")" @onclick="() => FiltrerJournalAsync(() => _filtre.PrevisionRecetteId = p.Id)">
+                                    <td>
+                                        <span class="font-mono text-xs font-semibold">@p.LigneCode</span> — @p.Nature
+                                        @if (p.Site is not null) { <span class="text-xs text-gray-500"> · @p.Site</span> }
+                                    </td>
+                                    <td class="tabular-nums text-right">@Formats.Montant(p.Montants.PrevisionRetenue)</td>
+                                    <td class="tabular-nums text-right">@Formats.Montant(p.Montants.Emis)</td>
+                                    <td class="tabular-nums text-right">@Formats.Taux(p.Montants.TauxExecution)</td>
+                                    <td class="tabular-nums text-right">@Formats.Montant(p.Montants.Encaisse)</td>
+                                    <td class="tabular-nums text-right">@Formats.Taux(p.Montants.TauxRecouvrementEmis)</td>
+                                    <td class="tabular-nums text-right">@Formats.Montant(p.Montants.ResteARecouvrerEmis)</td>
+                                    <td class="tabular-nums text-right">@Formats.Taux(p.Montants.TauxResteARecouvrer)</td>
+                                </tr>
+                            }
+                            <tr class="font-semibold bg-gray-50">
+                                <td>Total</td>
+                                <td class="tabular-nums text-right">@Formats.Montant(Total.PrevisionRetenue)</td>
+                                <td class="tabular-nums text-right">@Formats.Montant(Total.Emis)</td>
+                                <td class="tabular-nums text-right">@Formats.Taux(Total.TauxExecution)</td>
+                                <td class="tabular-nums text-right">@Formats.Montant(Total.Encaisse)</td>
+                                <td class="tabular-nums text-right">@Formats.Taux(Total.TauxRecouvrementEmis)</td>
+                                <td class="tabular-nums text-right">@Formats.Montant(Total.ResteARecouvrerEmis)</td>
+                                <td class="tabular-nums text-right">@Formats.Taux(Total.TauxResteARecouvrer)</td>
+                            </tr>
+                        </tbody>
+                    </MudSimpleTable>
+                </div>
+            }
+        </AppCard>
+
+        <AppCard PaddingCorps="false">
+            <TitreContent>
+                <div class="flex flex-col lg:flex-row gap-3 w-full">
+                    <MudTextField T="string" @bind-Value="_filtre.Recherche" @bind-Value:after="() => ChargerJournalAsync(1)" Placeholder="Numéro, ligne, nature…"
+                                  DebounceInterval="300" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" />
+                    <MudSelect T="Ulid?" Value="_filtre.PeriodeId" ValueChanged="v => FiltrerJournalAsync(() => _filtre.PeriodeId = v)" Label="Mois" Clearable="true"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(id => _mois.FirstOrDefault(m => m.Id == id)?.DateDebut.ToString("MMMM yyyy", Formats.Francais) ?? "")">
+                        @foreach (var m in _mois) { <MudSelectItem T="Ulid?" Value="@m.Id">@m.DateDebut.ToString("MMMM yyyy", Formats.Francais)</MudSelectItem> }
+                    </MudSelect>
+                    @if (_filtre.PrevisionRecetteId is not null)
+                    {
+                        <AppButton Variante="ghost" Taille="sm" Icone="x" OnClick="() => FiltrerJournalAsync(() => _filtre.PrevisionRecetteId = null)">Toutes les prévisions</AppButton>
+                    }
+                </div>
+            </TitreContent>
+            <ChildContent>
+                @if (_journal.Count == 0)
+                {
+                    <EtatVide Icone="document-text" Titre="Aucune facture émise" />
+                }
+                else
+                {
+                    <MudSimpleTable Dense="true" Hover="true">
+                        <thead><tr><th>Date</th><th>Prévision</th><th>Numéro</th><th class="text-right">Montant</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var e in _journal)
+                            {
+                                <tr>
+                                    <td class="whitespace-nowrap">@e.Date.ToString("dd/MM/yyyy")</td>
+                                    <td class="text-xs">@e.Prevision</td>
+                                    <td class="font-mono text-xs">@e.Reference</td>
+                                    <td class="tabular-nums text-right">@Formats.Montant(e.Montant)</td>
+                                    <td class="text-right whitespace-nowrap">
+                                        @if (Saisissable && !MoisClos(e.Mois))
+                                        {
+                                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditerAsync(e)" />
+                                            <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerAsync(e)" />
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </ChildContent>
+            <PiedContent>
+                <div class="flex items-center justify-between">
+                    <p class="text-xs text-gray-500">@_totalJournal facture(s) · total @Formats.Montant(_montantJournal)</p>
+                    @if (_totalJournal > Taille)
+                    {
+                        <MudPagination Count="@((int)Math.Ceiling(_totalJournal / (double)Taille))" Selected="_page" SelectedChanged="ChargerJournalAsync" Size="Size.Small" Color="Color.Primary" />
+                    }
+                </div>
+            </PiedContent>
+        </AppCard>
+    }
+</AutoriseSi>
+
+@code {
+    private const int Taille = 20;
+
+    private readonly FiltreEncaissements _filtre = new();
+    private LigneExercice? _exercice;
+    private List<LignePeriode> _mois = new();
+    private List<LignePrevision> _previsions = new();
+    private List<LigneEmission> _journal = new();
+    private int _page = 1, _totalJournal;
+    private decimal _montantJournal;
+    private bool _peutSaisir;
+
+    private bool Saisissable => _peutSaisir && _exercice is { Statut: StatutExercice.Ouvert };
+    private bool MoisClos(int numero) => _mois.FirstOrDefault(m => m.Numero == numero)?.EstCloturee == true;
+    private MontantsRecette Total => MontantsRecette.Somme(_previsions.Select(p => p.Montants));
+
+    protected override async Task OnInitializedAsync()
+        => _peutSaisir = (await Droits.ObtenirDroitsAsync(await UserContext.ObtenirUserIdAsync())).Contains(TypeDroit.EncaissementSaisir);
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        _filtre.PeriodeId = null;
+        _filtre.PrevisionRecetteId = null;
+        if (e is null) return;
+        _mois = (await Exercices.ListerPeriodesAsync(e.Id)).Where(p => p.Type == TypePeriode.Mois).ToList();
+        await ChargerToutAsync();
+    }
+
+    private async Task ChargerToutAsync()
+    {
+        if (_exercice is null) return;
+        (_previsions, _) = await Previsions.ListerAsync(new FiltrePrevisions { ExerciceId = _exercice.Id }, 1, 200);
+        await ChargerJournalAsync(1);
+    }
+
+    private async Task FiltrerJournalAsync(Action changer)
+    {
+        changer();
+        await ChargerJournalAsync(1);
+    }
+
+    private async Task ChargerJournalAsync(int page)
+    {
+        _page = page;
+        if (_exercice is null) return;
+        _filtre.ExerciceId = _exercice.Id;
+        (_journal, _totalJournal, _montantJournal) = await Service.ListerAsync(_filtre, page, Taille);
+    }
+
+    private async Task EditerAsync(LigneEmission? e)
+    {
+        var saisie = e is null
+            ? new SaisieEmission { PrevisionRecetteId = _filtre.PrevisionRecetteId, Date = DateOnly.FromDateTime(DateTime.Today) }
+            : await Service.ObtenirSaisieAsync(e.Id);
+        if (saisie is null) return;
+        var parametres = new DialogParameters<DialogEmission> { { x => x.Saisie, saisie }, { x => x.ExerciceId, _exercice!.Id } };
+        var dialog = await DialogService.ShowAsync<DialogEmission>(e is null ? "Nouvelle facture émise" : "Modifier la facture", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Facture enregistrée.", Severity.Success);
+            await ChargerToutAsync();
+        }
+    }
+
+    private async Task SupprimerAsync(LigneEmission e)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, "Supprimer la facture émise" }, { x => x.Message, $"La facture du {e.Date:dd/MM/yyyy} ({Formats.Montant(e.Montant)}) est supprimée." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+        var (ok, erreur) = await Service.SupprimerAsync(e.Id);
+        Snackbar.Add(ok ? "Facture supprimée." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerToutAsync();
+    }
+}

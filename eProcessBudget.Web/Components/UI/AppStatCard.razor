@@ -1,0 +1,68 @@
+@*
+    Tuile d'indicateur pour les tableaux de bord : une valeur, son libellé, une icône,
+    et éventuellement une variation. La tuile prend la couleur de CouleurIcone (filet de
+    tête, pastille, libellé) sur un fond dégradé de CouleurFond ; sans couleur, la charte.
+
+    RÈGLE DE LISIBILITÉ : la valeur doit se lire sans effort. Pas plus de 4 tuiles par
+    ligne, et un libellé qui dit ce que compte le chiffre, pas une catégorie vague.
+
+    EXEMPLE
+    -------
+    <AppStatCard Label="Commandes en attente" Valeur="18" Icone="clipboard-list"
+                 SousTitre="dont 3 en retard" Variation="12 %" VariationPositive="false" />
+*@
+
+<div class="tuile flex items-start gap-4" style="@StyleTeinte" data-guide="indicateur">
+
+    <div class="tuile-icone" aria-hidden="true">
+        <div class="w-6 h-6"><AppIcon Nom="@Icone" /></div>
+    </div>
+
+    <div class="flex-1 min-w-0 relative z-10">
+        <p class="tuile-libelle truncate">@Label</p>
+
+        <div class="flex items-baseline gap-2 mt-1">
+            <p class="tuile-valeur text-2xl font-bold leading-tight break-words">@Valeur</p>
+
+            @if (!string.IsNullOrEmpty(Variation))
+            {
+                <span class="text-xs font-semibold @(VariationPositive ? "text-green-600" : "text-red-600")">
+                    @(VariationPositive ? "▲" : "▼") @Variation
+                </span>
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(SousTitre))
+        {
+            <p class="tuile-sous-titre text-xs mt-1 truncate" title="@SousTitre">@SousTitre</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string Valeur { get; set; } = "0";
+    [Parameter] public string Icone { get; set; } = "chart-bar";
+    [Parameter] public string SousTitre { get; set; } = "";
+
+    /// <summary>Variation affichée à côté de la valeur (ex. "12 %"). Vide = masquée.</summary>
+    [Parameter] public string Variation { get; set; } = "";
+    [Parameter] public bool VariationPositive { get; set; } = true;
+
+    /// <summary>
+    /// Teinte claire de la tuile (fond dégradé). Vide : dérivée de la couleur primaire de la charte.
+    /// </summary>
+    [Parameter] public string CouleurFond { get; set; } = "";
+
+    /// <summary>
+    /// Couleur de la tuile : pastille d'icône, filet de tête, libellé. Vide : couleur primaire de la charte.
+    /// </summary>
+    [Parameter] public string CouleurIcone { get; set; } = "";
+
+    /// <summary>Variables CSS de la tuile ; sans couleur fournie, la charte s'applique (classe .tuile).</summary>
+    private string StyleTeinte
+        => (string.IsNullOrWhiteSpace(CouleurIcone) ? "" : $"--teinte: {CouleurIcone};")
+         + (string.IsNullOrWhiteSpace(CouleurFond) ? "" : $"--teinte-fond: {CouleurFond};");
+}
+
+

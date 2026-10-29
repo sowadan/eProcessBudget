@@ -1,0 +1,171 @@
+@page "/administration/connexions"
+@inject IJournalConnexionService Journal
+
+<PageTitle>Journal des connexions — Administration</PageTitle>
+
+@*
+    Journal des connexions (cahier fonctionnel § 3.1.2) : succès, échecs, blocages et
+    déconnexions, avec l'adresse IP. Ajout seul : rien ne s'y modifie ni ne s'y supprime.
+    Un administrateur d'organisme ne voit que les connexions de son organisme.
+*@
+
+<AutoriseSi DroitsRequis="new[] { TypeDroit.AuditConsultation }">
+
+    <PageHeader Titre="Journal des connexions"
+                Description="Tentatives de connexion, blocages et déconnexions.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a>
+            <span>/</span>
+            <span class="text-gray-700">Administration</span>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <!-- ═══ Filtres  -->
+    <AppCard ClasseSup="mb-6">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <MudTextField T="string" @bind-Value="_login" @bind-Value:after="RechercherAsync"
+                          Label="Identifiant saisi" DebounceInterval="300"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" />
+
+            <MudSelect T="StatutConnexion?" @bind-Value="_statut" @bind-Value:after="RechercherAsync"
+                       Label="Résultat" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                @foreach (var s in Enum.GetValues<StatutConnexion>())
+                {
+                    <MudSelectItem T="StatutConnexion?" Value="@s">@Libelle(s)</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudDatePicker @bind-Date="_du" @bind-Date:after="RechercherAsync"
+                           Label="Du" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           DateFormat="dd/MM/yyyy" Clearable="true" />
+
+            <MudDatePicker @bind-Date="_au" @bind-Date:after="RechercherAsync"
+                           Label="Au" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           DateFormat="dd/MM/yyyy" Clearable="true" />
+        </div>
+    </AppCard>
+
+    <!-- ═══ Liste  -->
+    <AppCard PaddingCorps="false">
+        <ChildContent>
+            @if (_chargement)
+            {
+                <div class="flex justify-center py-16">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                </div>
+            }
+            else if (_items.Count == 0)
+            {
+                <EtatVide Icone="clock" Titre="Aucune connexion" Message="Aucune entrée ne correspond à ces critères." />
+            }
+            else
+            {
+                <div class="zone-defilante">
+                    <MudTable Items="_items" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Date</MudTh>
+                            <MudTh>Identifiant</MudTh>
+                            <MudTh>Utilisateur</MudTh>
+                            <MudTh>Adresse IP</MudTh>
+                            <MudTh>Résultat</MudTh>
+                            <MudTh>Motif</MudTh>
+                        </HeaderContent>
+
+                        <RowTemplate>
+                            <MudTd DataLabel="Date">
+                                <span class="text-xs text-gray-600 tabular-nums">
+                                    @context.DateHeure.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
+                                </span>
+                            </MudTd>
+                            <MudTd DataLabel="Identifiant">
+                                <span class="font-mono text-xs text-gray-700">@context.Login</span>
+                            </MudTd>
+                            <MudTd DataLabel="Utilisateur">
+                                <span class="text-sm text-gray-600">@(context.NomPrenoms ?? "—")</span>
+                            </MudTd>
+                            <MudTd DataLabel="Adresse IP">
+                                <span class="font-mono text-xs text-gray-500" title="@context.UserAgent">@context.AdresseIp</span>
+                            </MudTd>
+                            <MudTd DataLabel="Résultat">
+                                <AppBadge Variante="@Variante(context.Statut)" Petit="true">@Libelle(context.Statut)</AppBadge>
+                            </MudTd>
+                            <MudTd DataLabel="Motif">
+                                <span class="text-xs text-gray-500">@context.Motif</span>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </div>
+            }
+        </ChildContent>
+
+        <PiedContent>
+            <div class="flex items-center justify-between gap-4 flex-wrap">
+                <p class="text-xs text-gray-500">@_total entrée(s)</p>
+
+                @if (_total > _taille)
+                {
+                    <MudPagination Count="@((int)Math.Ceiling(_total / (double)_taille))"
+                                   Selected="_page" SelectedChanged="ChangerPageAsync"
+                                   Color="Color.Primary" Size="Size.Small" />
+                }
+            </div>
+        </PiedContent>
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    private const int _taille = 50;
+
+    private List<LigneJournalConnexion> _items = new();
+    private int _total;
+    private int _page = 1;
+    private bool _chargement = true;
+
+    private string? _login;
+    private StatutConnexion? _statut;
+    private DateTime? _du;
+    private DateTime? _au;
+
+    protected override async Task OnInitializedAsync() => await ChargerAsync();
+
+    private async Task ChargerAsync()
+    {
+        _chargement = true;
+
+        // Dates saisies en heure locale, stockées en UTC ; « au » inclut toute la journée.
+        var du = _du?.Date.ToUniversalTime();
+        var au = _au?.Date.AddDays(1).AddTicks(-1).ToUniversalTime();
+
+        (_items, _total) = await Journal.RechercherAsync(new FiltreJournalConnexion(_login, _statut, du, au, _page, _taille));
+        _chargement = false;
+    }
+
+    private async Task RechercherAsync()
+    {
+        _page = 1;
+        await ChargerAsync();
+    }
+
+    private async Task ChangerPageAsync(int page)
+    {
+        _page = page;
+        await ChargerAsync();
+    }
+
+    private static string Libelle(StatutConnexion s) => s switch
+    {
+        StatutConnexion.Succes       => "Succès",
+        StatutConnexion.Echec        => "Échec",
+        StatutConnexion.CompteBloque => "Compte bloqué",
+        StatutConnexion.Deconnexion  => "Déconnexion",
+        _ => s.ToString()
+    };
+
+    private static string Variante(StatutConnexion s) => s switch
+    {
+        StatutConnexion.Succes       => "success",
+        StatutConnexion.Echec        => "warning",
+        StatutConnexion.CompteBloque => "danger",
+        _                            => "neutral"
+    };
+}

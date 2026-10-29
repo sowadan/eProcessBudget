@@ -1,0 +1,83 @@
+@inject IProgrammeService ProgrammeService
+@inject IReferentielService<Structure> ServiceStructure
+
+@* Structures responsables conjointes d'un programme (réponse du métier, C.1) : au moins une, dont une principale. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_chargement)
+        {
+            <div class="flex justify-center py-8"><MudProgressCircular Indeterminate="true" Color="Color.Primary" /></div>
+        }
+        else
+        {
+            @if (_erreur is not null)
+            {
+                <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+            }
+            <div class="max-h-80 overflow-y-auto space-y-1">
+                @foreach (var s in _structures)
+                {
+                    <div class="flex items-center justify-between gap-2">
+                        <MudCheckBox T="bool" Value="@_selection.Contains(s.Id)" Dense="true" Color="Color.Primary" Disabled="!PeutGerer"
+                                     ValueChanged="@(v => Basculer(s.Id, v))" Label="@s.Libelle" />
+                        @if (_selection.Contains(s.Id))
+                        {
+                            <MudTooltip Text="@(_principale == s.Id ? "Structure principale" : "Désigner comme principale")">
+                                <MudIconButton Size="Size.Small" Disabled="!PeutGerer" Color="@(_principale == s.Id ? Color.Warning : Color.Default)"
+                                               Icon="@(_principale == s.Id ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)"
+                                               OnClick="() => _principale = s.Id" />
+                            </MudTooltip>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">@(PeutGerer ? "Annuler" : "Fermer")</AppButton>
+        @if (PeutGerer)
+        {
+            <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Ulid ProgrammeId { get; set; }
+    [Parameter] public bool PeutGerer { get; set; }
+
+    private List<ElementListe> _structures = new();
+    private readonly HashSet<Ulid> _selection = new();
+    private Ulid _principale;
+    private bool _chargement = true;
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _structures = await ServiceStructure.ListerPourSelectionAsync();
+        foreach (var s in await ProgrammeService.ObtenirStructuresAsync(ProgrammeId))
+        {
+            _selection.Add(s.StructureId);
+            if (s.EstPrincipale) _principale = s.StructureId;
+            if (_structures.All(x => x.Id != s.StructureId)) _structures.Add(new ElementListe(s.StructureId, s.Libelle));
+        }
+        _chargement = false;
+    }
+
+    private void Basculer(Ulid id, bool coche)
+    {
+        if (coche) { _selection.Add(id); if (_principale == default) _principale = id; }
+        else { _selection.Remove(id); if (_principale == id) _principale = _selection.FirstOrDefault(); }
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await ProgrammeService.DefinirStructuresAsync(ProgrammeId, _selection, _principale == default ? null : _principale);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

@@ -1,0 +1,87 @@
+@inject IRepartitionService Service
+@inject IReferentielService<ActionProgramme> ServiceAction
+@inject IReferentielService<Activite> ServiceActivite
+
+@* Répartition du temps d'un agent entre actions (et activités), au plus 100 % de son temps de travail. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        @foreach (var part in _parts)
+        {
+            <div class="flex items-center gap-2 mb-2">
+                <div class="flex-1"><ChoixReference Label="Action" Elements="_actions" Disabled="!PeutSaisir" Value="part.ActionId" ValueChanged="v => ChangerActionAsync(part, v)" /></div>
+                <div class="flex-1"><ChoixReference Label="Activité (facultative)" Elements="ActivitesDe(part.ActionId)" Disabled="@(!PeutSaisir || part.ActionId is null)" Value="part.ActiviteId" ValueChanged="v => part.ActiviteId = v" /></div>
+                <div style="width:120px"><MudNumericField T="decimal" @bind-Value="part.Pourcentage" Label="%" Min="0" Max="100" Disabled="!PeutSaisir" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" /></div>
+                @if (PeutSaisir) { <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Close" OnClick="() => _parts.Remove(part)" /> }
+            </div>
+        }
+        <div class="flex items-center justify-between mt-3">
+            @if (PeutSaisir) { <AppButton Variante="ghost" Taille="sm" Icone="plus" OnClick="() => _parts.Add(new())">Destination</AppButton> } else { <span></span> }
+            <span class="text-sm font-semibold @(Total <= 100 ? "text-emerald-700" : "text-red-700")">Total : @Formats.Pourcentage(Total) (100 % au plus)</span>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">@(PeutSaisir ? "Annuler" : "Fermer")</AppButton>
+        @if (PeutSaisir)
+        {
+            <AppButton Icone="check-circle" EnChargement="_enregistrement" Desactive="@(Total > 100)" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Ulid ExerciceId { get; set; }
+    [Parameter] public Ulid AgentId { get; set; }
+    [Parameter] public bool PeutSaisir { get; set; }
+
+    private sealed class Part { public Ulid? ActionId { get; set; } public Ulid? ActiviteId { get; set; } public decimal Pourcentage { get; set; } }
+
+    private readonly List<Part> _parts = new();
+    private List<ElementListe> _actions = new();
+    // Activités chargées à la demande, seulement pour les actions choisies.
+    private readonly Dictionary<Ulid, List<ElementListe>> _activites = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    private decimal Total => _parts.Sum(p => p.Pourcentage);
+
+    private IReadOnlyList<ElementListe> ActivitesDe(Ulid? actionId)
+        => actionId is { } id && _activites.TryGetValue(id, out var liste) ? liste : [];
+
+    private async Task ChargerActivitesAsync(Ulid actionId)
+    {
+        if (!_activites.ContainsKey(actionId))
+            _activites[actionId] = await ServiceActivite.ListerPourSelectionAsync(a => a.ActionId == actionId);
+    }
+
+    private async Task ChangerActionAsync(Part part, Ulid? actionId)
+    {
+        part.ActionId = actionId;
+        part.ActiviteId = null;
+        if (actionId is { } id) await ChargerActivitesAsync(id);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _actions = await ServiceAction.ListerPourSelectionAsync();
+        foreach (var t in await Service.ObtenirTempsAsync(ExerciceId, AgentId))
+        {
+            _parts.Add(new Part { ActionId = t.ActionId, ActiviteId = t.ActiviteId, Pourcentage = t.Pourcentage });
+            await ChargerActivitesAsync(t.ActionId);
+        }
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        if (_parts.Any(p => p.ActionId is null)) { _erreur = "Choisissez l'action de chaque part."; return; }
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.DefinirTempsAsync(ExerciceId, AgentId, _parts.Select(p => (p.ActionId!.Value, p.ActiviteId, p.Pourcentage)).ToList());
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

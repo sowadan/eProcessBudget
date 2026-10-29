@@ -1,0 +1,67 @@
+@inject IRepartitionService Service
+@inject IReferentielService<Activite> ServiceActivite
+
+@* Clés de répartition d'une ligne entre activités : le total s'affiche en direct et doit faire exactement 100 %. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        @foreach (var part in _parts)
+        {
+            <div class="flex items-center gap-2 mb-2">
+                <div class="flex-1"><ChoixReference Label="Activité" Elements="_activites" Disabled="!PeutSaisir" Value="part.ActiviteId" ValueChanged="v => part.ActiviteId = v" /></div>
+                <div style="width:130px"><MudNumericField T="decimal" @bind-Value="part.Pourcentage" Label="%" Min="0" Max="100" Disabled="!PeutSaisir" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" /></div>
+                @if (PeutSaisir) { <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Close" OnClick="() => _parts.Remove(part)" /> }
+            </div>
+        }
+        <div class="flex items-center justify-between mt-3">
+            @if (PeutSaisir) { <AppButton Variante="ghost" Taille="sm" Icone="plus" OnClick="() => _parts.Add(new())">Activité</AppButton> } else { <span></span> }
+            <span class="text-sm font-semibold @(Total == 100 || _parts.Count == 0 ? "text-emerald-700" : "text-red-700")">Total : @Formats.Pourcentage(Total)</span>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">@(PeutSaisir ? "Annuler" : "Fermer")</AppButton>
+        @if (PeutSaisir)
+        {
+            <AppButton Icone="check-circle" EnChargement="_enregistrement" Desactive="@(Total != 100 && _parts.Count > 0)" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Ulid ExerciceId { get; set; }
+    [Parameter] public Ulid LigneId { get; set; }
+    [Parameter] public bool PeutSaisir { get; set; }
+
+    private sealed class Part { public Ulid? ActiviteId { get; set; } public decimal Pourcentage { get; set; } }
+
+    private readonly List<Part> _parts = new();
+    private List<ElementListe> _activites = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    private decimal Total => _parts.Sum(p => p.Pourcentage);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _activites = await ServiceActivite.ListerPourSelectionAsync();
+        foreach (var c in await Service.ObtenirClesAsync(ExerciceId, LigneId))
+        {
+            _parts.Add(new Part { ActiviteId = c.ActiviteId, Pourcentage = c.Pourcentage });
+            if (_activites.All(a => a.Id != c.ActiviteId)) _activites.Add(new ElementListe(c.ActiviteId, c.Activite));
+        }
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        if (_parts.Any(p => p.ActiviteId is null)) { _erreur = "Choisissez l'activité de chaque part."; return; }
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.DefinirClesAsync(ExerciceId, LigneId, _parts.Select(p => (p.ActiviteId!.Value, p.Pourcentage)).ToList());
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

@@ -1,0 +1,23 @@
+@page "/parametrage/comptes-bancaires"
+
+<PageTitle>Paramétrage</PageTitle>
+
+@* Référentiel CompteBancaire : colonnes de la liste. Tout le reste (droits, filtres, saisie, Excel) vient de PageReferentiel. *@
+
+<PageReferentiel T="CompteBancaire" Formulaire="typeof(FormulaireCompteBancaire)"
+                 Description="Comptes bancaires de l'organisme : positionnement des ressources.">
+    <EnTetes>
+        <MudTh>Numéro</MudTh>
+        <MudTh>Intitulé</MudTh>
+        <MudTh>Banque</MudTh>
+        <MudTh>Devise</MudTh>
+        <MudTh>Compte</MudTh>
+    </EnTetes>
+    <Colonnes>
+        <MudTd DataLabel="Numéro"><span class="font-mono text-xs font-semibold text-gray-800">@context.NumeroCompte</span></MudTd>
+        <MudTd DataLabel="Intitulé"><span class="text-sm text-gray-700">@context.Intitule</span></MudTd>
+        <MudTd DataLabel="Banque"><span class="text-sm text-gray-500">@context.Banque</span></MudTd>
+        <MudTd DataLabel="Devise"><span class="text-sm text-gray-500">@context.Devise.CodeIso</span></MudTd>
+        <MudTd DataLabel="Compte"><span class="text-sm text-gray-500">@(context.CompteComptable?.Numero ?? "—")</span></MudTd>
+    </Colonnes>
+</PageReferentiel>

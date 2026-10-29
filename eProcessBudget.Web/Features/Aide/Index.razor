@@ -1,0 +1,172 @@
+@page "/aide"
+@using Microsoft.Extensions.Options
+@inject IUserContextService UserContext
+@inject IDroitService Droits
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@inject IOptions<ApplicationOptions> AppOptions
+
+<PageTitle>Guide d'utilisation — @AppOptions.Value.Nom</PageTitle>
+
+@*
+    Guide d'utilisation (manuel dynamique) : un guide par écran, classé comme le menu et
+    limité aux écrans auxquels l'utilisateur a accès. Chaque guide se lit ici et se joue
+    en visite guidée sur son écran. Contenu : GuidesApplication.cs.
+*@
+
+<PageHeader Titre="Guide d'utilisation"
+            Description="Le manuel de l'application, limité aux écrans auxquels vous avez accès.">
+    <BreadcrumbContent>
+        <a href="/" class="hover:underline">Accueil</a><span>/</span><span>Aide</span>
+    </BreadcrumbContent>
+    <ActionsContent>
+        <AppButton Variante="outline" Icone="sparkles" OnClick="DecouvrirInterfaceAsync">Découvrir l'interface</AppButton>
+    </ActionsContent>
+</PageHeader>
+
+<AppCard ClasseSup="mb-6">
+    <div class="flex flex-col sm:flex-row gap-3 sm:items-center">
+        <MudTextField T="string" @bind-Value="_recherche" Immediate="true" DebounceInterval="200"
+                      Placeholder="Rechercher un écran, une règle, un mot…" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Clearable="true" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" Class="flex-1" />
+        <p class="text-xs text-gray-500 sm:max-w-xs">
+            Le bouton <strong>Aide</strong> de l'en-tête lance à tout moment la visite guidée de l'écran affiché.
+        </p>
+    </div>
+</AppCard>
+
+@if (!_charge)
+{
+    <div class="flex justify-center py-16">
+        <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+    </div>
+}
+else if (!Sections.Any())
+{
+    <AppCard>
+        <EtatVide Icone="search" Titre="Aucun guide" Message="Aucun guide ne correspond à cette recherche." />
+    </AppCard>
+}
+else
+{
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+
+        <!-- ═══ Sommaire ══════════════════════════════════════════════════════ -->
+        <nav class="carte p-4 lg:sticky lg:top-0 hidden lg:block" aria-label="Sommaire du guide">
+            <p class="text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">Sommaire</p>
+            <ul class="space-y-1 text-sm">
+                @foreach (var (titre, _, ancre, guides) in Sections)
+                {
+                    <li>
+                        <a href="@($"aide#{ancre}")" class="flex justify-between gap-2 px-2 py-1 rounded hover:bg-gray-100 text-gray-700">
+                            <span class="truncate">@titre</span>
+                            <span class="text-gray-400">@guides.Count</span>
+                        </a>
+                    </li>
+                }
+            </ul>
+        </nav>
+
+        <!-- ═══ Guides ════════════════════════════════════════════════════════ -->
+        <div class="lg:col-span-3 space-y-6">
+            @foreach (var (titre, icone, ancre, guides) in Sections)
+            {
+                <section id="@ancre" class="scroll-mt-4">
+                    <h2 class="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-gray-500 mb-3">
+                        <span class="w-4 h-4"><AppIcon Nom="@icone" /></span>@titre
+                    </h2>
+
+                    <div class="space-y-3">
+                        @foreach (var guide in guides)
+                        {
+                            <AppCard>
+                                <div class="flex flex-col sm:flex-row sm:items-start gap-4">
+                                    <div class="flex-1 min-w-0">
+                                        <h3 class="text-base font-semibold text-gray-900">@guide.Titre</h3>
+                                        <p class="text-sm text-gray-600 mt-1">@guide.Resume</p>
+
+                                        @if (guide.BonASavoir.Length > 0)
+                                        {
+                                            <ul class="mt-3 space-y-1.5">
+                                                @foreach (var etape in guide.BonASavoir)
+                                                {
+                                                    <li class="text-sm text-gray-600 pl-3 border-l-2" style="border-color: var(--app-accent);">
+                                                        <span class="font-medium text-gray-800">@etape.Titre.</span>
+                                                        @((MarkupString)etape.Texte)
+                                                    </li>
+                                                }
+                                            </ul>
+                                        }
+                                    </div>
+
+                                    @if (!guide.Route.Contains('{'))
+                                    {
+                                        <div class="flex sm:flex-col gap-2 flex-shrink-0">
+                                            <a href="@VisitesGuidees.Lien(guide)"
+                                               class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white hover:opacity-90"
+                                               style="background-color: var(--app-secondaire);">
+                                                <span class="w-4 h-4"><AppIcon Nom="sparkles" /></span>Lancer la visite
+                                            </a>
+                                            <a href="@guide.Route"
+                                               class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-700 border border-gray-300 hover:bg-gray-50">
+                                                <span class="w-4 h-4"><AppIcon Nom="arrow-right" /></span>Ouvrir l'écran
+                                            </a>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <p class="text-xs text-gray-400 sm:max-w-[10rem] flex-shrink-0">
+                                            S'ouvre depuis sa liste ; sa visite se lance avec le bouton Aide.
+                                        </p>
+                                    }
+                                </div>
+                            </AppCard>
+                        }
+                    </div>
+                </section>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private bool _charge;
+    private string? _recherche;
+    private HashSet<string> _routesAutorisees = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _routesAutorisees = await MenuApplication.RoutesAutoriseesAsync(Droits, await UserContext.ObtenirUserIdAsync());
+        _charge = true;
+    }
+
+    /// <summary>Guides accessibles et correspondant à la recherche, classés comme le menu.</summary>
+    private IEnumerable<(string Titre, string Icone, string Ancre, List<GuideUtilisation> Guides)> Sections =>
+        GuidesApplication.Tous
+            .Where(EstAccessible)
+            .Where(Correspond)
+            .GroupBy(GuidesApplication.SectionDe)
+            .OrderBy(g => g.Key is null ? int.MaxValue : Array.IndexOf(MenuApplication.Sections, g.Key))
+            .Select(g => g.Key switch
+            {
+                null => ("Mon compte", "key", "section-compte", g.ToList()),
+                { Titre: null } => ("Général", "home", "section-general", g.ToList()),
+                var s => (s.Titre, s.Icone, $"section-{Array.IndexOf(MenuApplication.Sections, s)}", g.ToList())
+            });
+
+    /// <summary>Un guide suit les droits de l'entrée de menu de son écran.</summary>
+    private bool EstAccessible(GuideUtilisation guide)
+        => GuidesApplication.EntreeDe(guide.Route) is not { } entree || _routesAutorisees.Contains(entree.Href);
+
+    private bool Correspond(GuideUtilisation guide)
+    {
+        if (string.IsNullOrWhiteSpace(_recherche)) return true;
+        var terme = _recherche.Trim();
+        return guide.Titre.Contains(terme, StringComparison.CurrentCultureIgnoreCase)
+            || guide.Resume.Contains(terme, StringComparison.CurrentCultureIgnoreCase)
+            || guide.BonASavoir.Any(e => e.Titre.Contains(terme, StringComparison.CurrentCultureIgnoreCase)
+                                      || e.Texte.Contains(terme, StringComparison.CurrentCultureIgnoreCase));
+    }
+
+    private async Task DecouvrirInterfaceAsync() => await VisitesGuidees.InterfaceAsync(JS, AppOptions.Value.Nom);
+}

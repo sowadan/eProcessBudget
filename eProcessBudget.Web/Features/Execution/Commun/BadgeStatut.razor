@@ -1,0 +1,16 @@
+@* Statut d'une pièce (dotation, ajustement, engagement, paiement). *@
+
+<AppBadge Variante="@Variante" Petit="true">@LibellesExecution.Statut[Statut]</AppBadge>
+
+@code {
+    [Parameter] public StatutSaisie Statut { get; set; }
+
+    private string Variante => Statut switch
+    {
+        StatutSaisie.Valide => "success",
+        StatutSaisie.Soumis => "info",
+        StatutSaisie.Rejete => "danger",
+        StatutSaisie.Annule => "neutral",
+        _ => "warning"
+    };
+}

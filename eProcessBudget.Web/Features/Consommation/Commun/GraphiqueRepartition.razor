@@ -1,0 +1,52 @@
+@*
+    Répartition circulaire (anneau) d'un montant entre des regroupements ; la légende reprend
+    les montants et les parts. Au-delà de Max regroupements, les plus petits sont cumulés en « Autres ».
+
+    <GraphiqueRepartition Lignes="_parProgramme" Mesure="m => m.DotationTotale" />
+*@
+
+@if (_parts.Count == 0)
+{
+    <EtatVide Icone="chart-bar" Titre="Aucun montant" />
+}
+else
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+        <MudChart T="double" ChartType="ChartType.Donut" ChartSeries="@_series" ChartLabels="@_etiquettes" Width="100%" Height="260px"
+                  LegendPosition="Position.Bottom" />
+        <ul class="space-y-1.5 text-sm">
+            @foreach (var (libelle, montant) in _parts)
+            {
+                <li class="flex justify-between gap-3">
+                    <span class="truncate" title="@libelle">@libelle</span>
+                    <span class="tabular-nums whitespace-nowrap text-gray-600">
+                        @Formats.Montant(montant) · @Formats.Taux(CalculsExecution.Taux(montant, _total))
+                    </span>
+                </li>
+            }
+        </ul>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<LigneRegroupement> Lignes { get; set; } = [];
+
+    /// <summary>Grandeur répartie (par défaut la dotation totale).</summary>
+    [Parameter] public Func<MontantsDotation, decimal> Mesure { get; set; } = m => m.DotationTotale;
+
+    [Parameter] public int Max { get; set; } = 8;
+
+    private List<(string Libelle, decimal Montant)> _parts = new();
+    private List<ChartSeries<double>> _series = new();
+    private string[] _etiquettes = [];
+    private decimal _total;
+
+    protected override void OnParametersSet()
+    {
+        var tries = Lignes.Select(l => (l.Libelle, Montant: Mesure(l.Montants))).Where(x => x.Montant > 0).OrderByDescending(x => x.Montant).ToList();
+        _parts = tries.Count <= Max ? tries : tries.Take(Max - 1).Append(("Autres", tries.Skip(Max - 1).Sum(x => x.Montant))).ToList();
+        _total = _parts.Sum(p => p.Montant);
+        _etiquettes = _parts.Select(p => p.Libelle).ToArray();
+        _series = [new ChartSeries<double> { Name = "Montant", Data = _parts.Select(p => (double)p.Montant).ToArray() }];
+    }
+}

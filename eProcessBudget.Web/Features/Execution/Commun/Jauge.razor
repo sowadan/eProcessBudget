@@ -1,0 +1,18 @@
+@* Taux et sa barre : vert sous 80 %, orange jusqu'à 100 %, rouge au-delà. *@
+
+<div>
+    <p class="text-xs text-gray-500 mb-1">@Libelle</p>
+    <p class="text-lg font-semibold tabular-nums @Couleur">@Formats.Taux(Taux)</p>
+    <div class="h-1.5 bg-gray-100 rounded-full mt-1 overflow-hidden" role="presentation">
+        <div class="h-full rounded-full @Fond" style="width:@Largeur"></div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Libelle { get; set; } = "";
+    [Parameter] public decimal? Taux { get; set; }
+
+    private string Couleur => Taux switch { null => "text-gray-400", > 100 => "text-red-700", >= 80 => "text-amber-700", _ => "text-gray-900" };
+    private string Fond => Taux switch { > 100 => "bg-red-500", >= 80 => "bg-amber-500", _ => "bg-emerald-500" };
+    private string Largeur => FormattableString.Invariant($"{Math.Clamp(Taux ?? 0, 0, 100):0.##}%");
+}

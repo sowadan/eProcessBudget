@@ -1,0 +1,142 @@
+@page "/execution/depassements"
+@inject IDepassementService Service
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Dépassements — Exécution budgétaire</PageTitle>
+
+@*
+    File des dépassements (§ 4.2) : un dépassement de dotation n'est pas bloquant mais
+    attend la décision du Responsable Budget. Accepter valide l'engagement ; refuser le
+    rejette. Auteur, date et motif de la décision sont journalisés.
+*@
+
+<AutoriseSi DroitsRequis="AccesExecution.Lecture">
+    <PageHeader Titre="Dépassements" Description="Engagements au-delà de leur dotation, en attente de décision du Responsable Budget.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><a href="/execution" class="hover:underline">Exécution budgétaire</a>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <MudSelect T="StatutValidation?" Value="_statut" ValueChanged="ChangerStatutAsync" Label="Statut (tous si vide)" Clearable="true"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:240px"
+                   ToStringFunc="@(s => s is { } v ? LibellesExecution.StatutValidation[v] : "")">
+            @foreach (var (s, libelle) in LibellesExecution.StatutValidation)
+            {
+                <MudSelectItem T="StatutValidation?" Value="@s">@libelle</MudSelectItem>
+            }
+        </MudSelect>
+    </AppCard>
+
+    @if (_lignes.Count == 0)
+    {
+        <AppCard><EtatVide Icone="check-circle" Titre="Aucun dépassement" Message="@(_statut == StatutValidation.EnAttente ? "Rien n'attend votre décision." : "")" /></AppCard>
+    }
+    else
+    {
+        <div class="space-y-3">
+            @foreach (var d in _lignes)
+            {
+                <AppCard>
+                    <div class="flex flex-col lg:flex-row lg:items-start gap-4">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <a href="@DetailEngagement.Lien(d.EngagementId)" class="font-mono text-sm font-semibold hover:underline">@d.Engagement</a>
+                                <span class="text-sm text-gray-700">@d.Objet</span>
+                                <AppBadge Variante="@(d.Statut switch { StatutValidation.Validee => "success", StatutValidation.Rejetee => "danger", _ => "warning" })" Petit="true">
+                                    @LibellesExecution.StatutValidation[d.Statut]
+                                </AppBadge>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1">
+                                <a href="@DetailDotation.Lien(d.DotationId)" class="hover:underline">@d.LigneCode — @d.LigneLibelle</a>
+                                · demandé par @(d.Demandeur ?? "—") le @d.DateDemande.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                            </p>
+                            <p class="text-sm text-gray-800 mt-2"><span class="text-gray-500">Motif :</span> @d.Motif</p>
+                            @if (d.DateDecision is { } date)
+                            {
+                                <p class="text-sm text-gray-800 mt-1">
+                                    <span class="text-gray-500">Décision de @(d.Decideur ?? "—") le @date.ToLocalTime().ToString("dd/MM/yyyy HH:mm")@(d.Commentaire is null ? "" : " :")</span> @d.Commentaire
+                                </p>
+                            }
+                        </div>
+                        <dl class="grid grid-cols-3 gap-4 text-sm lg:w-96">
+                            <div><dt class="text-xs text-gray-500">Engagement</dt><dd class="tabular-nums font-semibold">@Formats.Montant(d.MontantEngage)</dd></div>
+                            <div><dt class="text-xs text-gray-500">Dépassement</dt><dd class="tabular-nums font-semibold text-red-700">@Formats.Montant(d.MontantDepassement)</dd></div>
+                            <div><dt class="text-xs text-gray-500">Taux après</dt><dd class="tabular-nums font-semibold">@Formats.Taux(d.TauxApres)</dd></div>
+                        </dl>
+                        @if (d.Statut == StatutValidation.EnAttente && _peutDecider)
+                        {
+                            <div class="flex lg:flex-col gap-2">
+                                <AppButton Taille="sm" Icone="check-circle" OnClick="() => AccepterAsync(d)">Accepter</AppButton>
+                                <AppButton Taille="sm" Variante="outline" Icone="x-circle" OnClick="() => RefuserAsync(d)">Refuser</AppButton>
+                            </div>
+                        }
+                    </div>
+                </AppCard>
+            }
+        </div>
+        @if (_total > Taille)
+        {
+            <div class="flex justify-end mt-4">
+                <MudPagination Count="@((int)Math.Ceiling(_total / (double)Taille))" Selected="_page" SelectedChanged="ChargerAsync" Size="Size.Small" Color="Color.Primary" />
+            </div>
+        }
+    }
+</AutoriseSi>
+
+@code {
+    private const int Taille = 20;
+
+    private StatutValidation? _statut = StatutValidation.EnAttente;
+    private List<LigneDepassement> _lignes = new();
+    private int _total, _page = 1;
+    private bool _peutDecider;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutDecider = await Droits.ADroitAsync(await UserContext.ObtenirUserIdAsync(), TypeDroit.DepassementValider);
+        await ChargerAsync(1);
+    }
+
+    private async Task ChangerStatutAsync(StatutValidation? s) { _statut = s; await ChargerAsync(1); }
+
+    private async Task ChargerAsync(int page)
+    {
+        _page = page;
+        (_lignes, _total) = await Service.ListerAsync(_statut, page, Taille);
+    }
+
+    private async Task AccepterAsync(LigneDepassement d)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, "Accepter le dépassement" },
+            { x => x.Message, $"L'engagement {d.Engagement} sera validé : la dotation sera dépassée de {Formats.Montant(d.MontantDepassement)}." },
+            { x => x.Libelle, "Accepter" }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+        await DeciderAsync(d, true, null);
+    }
+
+    private async Task RefuserAsync(LigneDepassement d)
+    {
+        var parametres = new DialogParameters<DialogMotif>
+        {
+            { x => x.Message, $"Refuser le dépassement : l'engagement {d.Engagement} sera rejeté. Son auteur sera notifié du motif." },
+            { x => x.Libelle, "Refuser" }, { x => x.LongueurMax, 1000 }
+        };
+        if (await (await DialogService.ShowAsync<DialogMotif>("Refus", parametres)).Result is { Canceled: false, Data: string motif })
+            await DeciderAsync(d, false, motif);
+    }
+
+    private async Task DeciderAsync(LigneDepassement d, bool accepter, string? commentaire)
+    {
+        var (ok, erreur) = await Service.DeciderAsync(d.Id, accepter, commentaire);
+        Snackbar.Add(ok ? (accepter ? "Dépassement accepté : engagement validé." : "Dépassement refusé : engagement rejeté.") : erreur!,
+            ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync(_page);
+    }
+}

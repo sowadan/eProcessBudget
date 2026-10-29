@@ -1,0 +1,55 @@
+@inject IEngagementService Service
+
+@*
+    Soumission d'un engagement : montre son effet sur la dotation. En cas de dépassement,
+    le motif est exigé ; l'engagement attendra la décision du Responsable Budget.
+*@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Soumission impossible">@_erreur</AppAlert></div>
+        }
+        <dl class="space-y-1.5 text-sm mb-4">
+            <LigneMontant Libelle="Dotation totale" Valeur="Evaluation.DotationTotale" />
+            <LigneMontant Libelle="Déjà engagé (validé)" Valeur="Evaluation.AEValidees" />
+            <LigneMontant Libelle="Disponible" Valeur="Evaluation.Disponible" Fort="true" Alerte="@(Evaluation.Disponible < 0)" />
+            <LigneMontant Libelle="Cet engagement" Valeur="Evaluation.Montant" />
+            <div class="flex justify-between gap-3 pt-1.5 border-t border-gray-100">
+                <dt class="font-semibold text-gray-800">Taux d'engagement après</dt>
+                <dd class="tabular-nums font-semibold">@Formats.Taux(Evaluation.TauxApres)</dd>
+            </div>
+        </dl>
+
+        @if (Evaluation.Depassement > 0)
+        {
+            <AppAlert Variante="warning" Titre="@($"Dépassement de {Formats.Montant(Evaluation.Depassement)}")">
+                Le dépassement n'est pas bloquant : l'engagement sera soumis au Responsable Budget, qui décidera de sa validation.
+            </AppAlert>
+            <MudTextField @bind-Value="_motif" Label="Motif du dépassement" Lines="3" MaxLength="1000" Counter="1000" Class="mt-3"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+        }
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="arrow-right" EnChargement="_envoi" OnClick="SoumettreAsync">Soumettre</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Ulid EngagementId { get; set; }
+    [Parameter] public EvaluationEngagement Evaluation { get; set; } = null!;
+
+    private string? _motif, _erreur;
+    private bool _envoi;
+
+    private async Task SoumettreAsync()
+    {
+        _envoi = true;
+        (var ok, _erreur) = await Service.SoumettreAsync(EngagementId, _motif);
+        _envoi = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

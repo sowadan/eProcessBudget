@@ -1,0 +1,21 @@
+@page "/parametrage/natures-depense"
+
+<PageTitle>Paramétrage</PageTitle>
+
+@* Référentiel NatureDepense : colonnes de la liste. Tout le reste (droits, filtres, saisie, Excel) vient de PageReferentiel. *@
+
+<PageReferentiel T="NatureDepense" Formulaire="typeof(FormulaireNatureDepense)"
+                 Description="Personnel, biens et services, transferts courants, investissements.">
+    <EnTetes>
+        <MudTh>Code</MudTh>
+        <MudTh>Libellé</MudTh>
+        <MudTh>Groupe</MudTh>
+        <MudTh>Ordre</MudTh>
+    </EnTetes>
+    <Colonnes>
+        <MudTd DataLabel="Code"><span class="font-mono text-xs font-semibold text-gray-800">@context.Code</span></MudTd>
+        <MudTd DataLabel="Libellé"><span class="text-sm text-gray-700">@context.Libelle</span></MudTd>
+        <MudTd DataLabel="Groupe"><span class="text-sm text-gray-500">@LibellesParametrage.De(LibellesParametrage.GroupeNature, context.GroupeNature)</span></MudTd>
+        <MudTd DataLabel="Ordre"><span class="text-sm text-gray-500">@context.Ordre</span></MudTd>
+    </Colonnes>
+</PageReferentiel>

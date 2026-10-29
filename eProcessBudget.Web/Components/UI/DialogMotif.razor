@@ -1,0 +1,48 @@
+@*
+    Dialogue de saisie d'un motif obligatoire, avant un rejet, une révocation ou toute
+    action qui doit être justifiée dans l'audit. Renvoie le motif saisi (string).
+
+    var parametres = new DialogParameters<DialogMotif>
+    {
+        { x => x.Message, "Rejeter la demande de M. X." },
+        { x => x.Libelle, "Rejeter" }
+    };
+    var dialog  = await DialogService.ShowAsync<DialogMotif>("Rejet", parametres);
+    var reponse = await dialog.Result;
+    if (reponse is { Canceled: false, Data: string motif }) { ... }
+*@
+
+<MudDialog>
+    <DialogContent>
+        <p class="text-sm text-gray-600 mb-4">@Message</p>
+        <MudTextField @bind-Value="_motif" Label="Motif" Lines="3" MaxLength="@LongueurMax" Counter="@LongueurMax"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true"
+                      Error="@_afficherErreur" ErrorText="Le motif est obligatoire." />
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Variante="danger" OnClick="Confirmer">@Libelle</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+
+    [Parameter] public string Message { get; set; } = "";
+    [Parameter] public string Libelle { get; set; } = "Confirmer";
+    [Parameter] public int LongueurMax { get; set; } = 500;
+
+    private string _motif = "";
+    private bool _afficherErreur;
+
+    private void Confirmer()
+    {
+        if (string.IsNullOrWhiteSpace(_motif))
+        {
+            _afficherErreur = true;
+            return;
+        }
+
+        Dialog.Close(DialogResult.Ok(_motif.Trim()));
+    }
+}

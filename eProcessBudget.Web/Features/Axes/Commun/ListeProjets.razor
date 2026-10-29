@@ -1,0 +1,210 @@
+@inject IProjetService Service
+@inject IReferentielService<Site> ServiceSite
+@inject IReferentielService<Tiers> ServiceTiers
+@inject IReferentielService<SourceFinancement> ServiceSource
+@inject IReferentielService<TypeTravaux> ServiceTypeTravaux
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+@*
+    Projets d'un axe et leur situation sur l'exercice (Entretien routier, Investissements,
+    Appuis). Les colonnes et les filtres s'adaptent à l'axe ; un clic ouvre la fiche.
+
+    <ListeProjets Axe="AxesDepense.Entretien" Exercice="_exercice" />
+*@
+
+<AppCard PaddingCorps="false">
+    <TitreContent>
+        <div class="flex flex-col lg:flex-row gap-3 w-full">
+            <MudTextField T="string" @bind-Value="_filtre.Recherche" @bind-Value:after="() => ChargerAsync(1)" Placeholder="Code ou intitulé…"
+                          DebounceInterval="300" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" />
+            <MudSelect T="StatutProjet?" Value="_filtre.Statut" ValueChanged="v => FiltrerAsync(() => _filtre.Statut = v)" Label="Statut" Clearable="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(s => s is { } v ? LibellesAxes.StatutProjet[v] : "")">
+                @foreach (var (valeur, libelle) in LibellesAxes.StatutProjet)
+                {
+                    <MudSelectItem T="StatutProjet?" Value="@valeur">@libelle</MudSelectItem>
+                }
+            </MudSelect>
+            @if (Axe == AxesDepense.Entretien)
+            {
+                <ChoixReference Label="Type de travaux" Elements="_typesTravaux" Value="_filtre.TypeTravauxId" ValueChanged="v => FiltrerAsync(() => _filtre.TypeTravauxId = v)" />
+            }
+            @if (Axe == AxesDepense.Investissement)
+            {
+                <ChoixReference Label="Source" Elements="_sources" Value="_filtre.SourceFinancementId" ValueChanged="v => FiltrerAsync(() => _filtre.SourceFinancementId = v)" />
+            }
+            @if (Axe == AxesDepense.Appuis)
+            {
+                <ChoixReference Label="Entité" Elements="_entites" Value="_filtre.TiersId" ValueChanged="v => FiltrerAsync(() => _filtre.TiersId = v)" />
+            }
+            <ChoixReference Label="Site" Elements="_sites" Value="_filtre.SiteId" ValueChanged="v => FiltrerAsync(() => _filtre.SiteId = v)" />
+        </div>
+    </TitreContent>
+    <ActionsContent>
+        @if (_peutSaisir)
+        {
+            <AppButton Icone="plus" OnClick="() => EditerAsync(null)">@LibelleNouveau</AppButton>
+        }
+    </ActionsContent>
+    <ChildContent>
+        @if (_lignes.Count == 0)
+        {
+            <EtatVide Icone="clipboard-list" Titre="Aucun projet" Message="Créez les projets de l'axe, puis leurs dotations dans Exécution budgétaire › Dotations." />
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead>
+                    <tr>
+                        <th>Projet</th><th>Statut</th>
+                        @if (Axe == AxesDepense.Entretien)
+                        {
+                            <th>Type de travaux</th><th class="text-right">Km prévus</th><th class="text-right">Km réalisés</th><th class="text-right">Avancement</th>
+                        }
+                        else if (Axe == AxesDepense.Investissement)
+                        {
+                            <th>Site · service</th><th>Source</th><th class="text-right">Km (réhab.)</th>
+                        }
+                        else
+                        {
+                            <th>Bénéficiaire</th><th>Site</th>
+                        }
+                        <th class="text-right">Dotation totale</th><th class="text-right">Engagé</th>
+                        <th class="text-right">@(Axe == AxesDepense.Appuis ? "Versé" : "Payé")</th><th class="text-right">Taux d'engagement</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in _lignes)
+                    {
+                        <tr class="cursor-pointer" @onclick="() => Nav.NavigateTo(DetailProjet.Lien(p.Id))">
+                            <td>
+                                <span class="font-mono text-xs font-semibold">@p.Code</span> — @p.Intitule
+                                @if (p.EstPluriannuel) { <AppBadge Variante="primary" Petit="true">Pluriannuel</AppBadge> }
+                                @if (p.NbContrats > 0) { <span class="text-xs text-gray-400">· @p.NbContrats contrat(s)</span> }
+                            </td>
+                            <td><BadgeStatutProjet Statut="p.Statut" /></td>
+                            @if (Axe == AxesDepense.Entretien)
+                            {
+                                <td class="text-xs text-gray-600">@RequetesAffichage.Joindre(p.TypeTravaux, p.TypeVoie)</td>
+                                <td class="tabular-nums text-right">@Formats.Nombre(p.KmPrevus)</td>
+                                <td class="tabular-nums text-right">@Formats.Nombre(p.KmRealises)</td>
+                                <td class="tabular-nums text-right">@Formats.Taux(p.TauxKm)</td>
+                            }
+                            else if (Axe == AxesDepense.Investissement)
+                            {
+                                <td class="text-xs text-gray-600">@RequetesAffichage.Joindre(p.Site, p.Structure)</td>
+                                <td><AppBadge Variante="neutral" Petit="true">@p.Source</AppBadge></td>
+                                <td class="tabular-nums text-right text-xs" title="Km réalisés / km prévus des projets de réhabilitation">
+                                    @if (p.KmPrevus is not null || p.KmRealises > 0) { @($"{Formats.Nombre(p.KmRealises)} / {Formats.Nombre(p.KmPrevus)}") }
+                                </td>
+                            }
+                            else
+                            {
+                                <td class="text-xs">@p.Beneficiaire</td>
+                                <td class="text-xs text-gray-600">@p.Site</td>
+                            }
+                            <td class="tabular-nums text-right">@Formats.Montant(p.Montants.DotationTotale)</td>
+                            <td class="tabular-nums text-right">@Formats.Montant(p.Montants.AETotal)</td>
+                            <td class="tabular-nums text-right">@Formats.Montant(p.Montants.PaiementsTotal)</td>
+                            <td class="tabular-nums text-right">@Formats.Taux(p.Montants.TauxEngagementYCReports)</td>
+                            <td class="text-right whitespace-nowrap" @onclick:stopPropagation="true">
+                                @if (_peutSaisir)
+                                {
+                                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditerAsync(p)" />
+                                    <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerAsync(p)" />
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </ChildContent>
+    <PiedContent>
+        <div class="flex items-center justify-between">
+            <p class="text-xs text-gray-500">@_total projet(s)@(Exercice is null ? "" : $" · situation de l'exercice {Exercice.Annee}")</p>
+            @if (_total > Taille)
+            {
+                <MudPagination Count="@((int)Math.Ceiling(_total / (double)Taille))" Selected="_page" SelectedChanged="ChargerAsync" Size="Size.Small" Color="Color.Primary" />
+            }
+        </div>
+    </PiedContent>
+</AppCard>
+
+@code {
+    private const int Taille = 20;
+
+    [Parameter, EditorRequired] public AxeDepense Axe { get; set; } = AxesDepense.Entretien;
+    [Parameter] public LigneExercice? Exercice { get; set; }
+
+    private readonly FiltreProjets _filtre = new();
+    private List<LigneProjet> _lignes = new();
+    private List<ElementListe> _sites = new(), _typesTravaux = new(), _sources = new(), _entites = new();
+    private int _total, _page = 1;
+    private bool _peutSaisir, _charge;
+    private Ulid? _exerciceCharge;
+
+    private string LibelleNouveau => Axe == AxesDepense.Entretien ? "Nouvelle opération" : Axe == AxesDepense.Appuis ? "Nouvel appui" : "Nouveau projet";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var droits = await Droits.ObtenirDroitsAsync(await UserContext.ObtenirUserIdAsync());
+        _peutSaisir = droits.Contains(Axe.DroitSaisir);
+        _sites = await ServiceSite.ListerPourSelectionAsync();
+        if (Axe == AxesDepense.Entretien) _typesTravaux = await ServiceTypeTravaux.ListerPourSelectionAsync(t => !t.EstPrestationControle && t.Code != CodesTypeTravaux.Rehabilitation);
+        if (Axe == AxesDepense.Investissement) _sources = await ServiceSource.ListerPourSelectionAsync();
+        if (Axe == AxesDepense.Appuis) _entites = await ServiceTiers.ListerPourSelectionAsync(t => t.TypeTiers == TypeTiers.EntiteBeneficiaireAppuis);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_charge && _exerciceCharge == Exercice?.Id) return;
+        _charge = true;
+        _exerciceCharge = Exercice?.Id;
+        await ChargerAsync(1);
+    }
+
+    private async Task FiltrerAsync(Action changer)
+    {
+        changer();
+        await ChargerAsync(1);
+    }
+
+    private async Task ChargerAsync(int page)
+    {
+        _page = page;
+        _filtre.ExerciceId = Exercice?.Id;
+        (_lignes, _total) = await Service.ListerAsync(Axe, _filtre, page, Taille);
+    }
+
+    private async Task EditerAsync(LigneProjet? p)
+    {
+        var saisie = p is null ? new SaisieProjet { CodeAxe = Axe.Code } : await Service.ObtenirSaisieAsync(p.Id);
+        if (saisie is null) return;
+        var parametres = new DialogParameters<DialogProjet> { { x => x.Axe, Axe }, { x => x.Saisie, saisie } };
+        var dialog = await DialogService.ShowAsync<DialogProjet>(p is null ? LibelleNouveau : $"Modifier {p.Code}", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Projet enregistré.", Severity.Success);
+            await ChargerAsync(_page);
+        }
+    }
+
+    private async Task SupprimerAsync(LigneProjet p)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, "Supprimer le projet" }, { x => x.Message, $"Le projet {p.Code} est supprimé (suppression logique)." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+        var (ok, erreur) = await Service.SupprimerAsync(p.Id);
+        Snackbar.Add(ok ? "Projet supprimé." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync(_page);
+    }
+}

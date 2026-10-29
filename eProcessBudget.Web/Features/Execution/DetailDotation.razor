@@ -1,0 +1,165 @@
+@page "/execution/dotations/{Id}"
+@inject ISituationService Situations
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Dotation — Exécution budgétaire</PageTitle>
+
+@* Situation d'une dotation et pièces qui la composent : ajustements, engagements, reports reçus. *@
+
+<AutoriseSi DroitsRequis="AccesExecution.Lecture">
+    @if (_fiche is null)
+    {
+        @if (_charge)
+        {
+            <AppCard><EtatVide Icone="collection" Titre="Dotation introuvable" Message="Elle a pu être supprimée." /></AppCard>
+        }
+    }
+    else
+    {
+        var d = _fiche.Dotation;
+        <PageHeader Titre="@($"{d.LigneCode} — {d.LigneLibelle}")" Description="@($"Exercice {_fiche.Annee} · {d.Axe} · rubrique {d.Rubrique}{(d.Imputation.Length > 0 ? " · " + d.Imputation : "")}")">
+            <BreadcrumbContent>
+                <a href="/" class="hover:underline">Accueil</a><span>/</span>
+                <a href="/execution" class="hover:underline">Dotations</a>
+            </BreadcrumbContent>
+            <ActionsContent>
+                <BadgeStatut Statut="d.Statut" />
+                @if (Saisissable && _droits.Contains(TypeDroit.AjustementSaisir))
+                {
+                    <AppButton Variante="outline" Icone="adjustments" OnClick="AjusterAsync">Ajuster</AppButton>
+                }
+                @if (Saisissable && _droits.Contains(TypeDroit.EngagementSaisir))
+                {
+                    <AppButton Icone="plus" OnClick="EngagerAsync">Engager</AppButton>
+                }
+            </ActionsContent>
+        </PageHeader>
+
+        <CarteSituation Montants="d.Montants" />
+
+        <MudTabs Elevation="0" Rounded="true" TabPanelsClass="pt-4" Class="mt-4">
+            <MudTabPanel Text="@($"Engagements ({_fiche.Engagements.Count})")">
+                <AppCard PaddingCorps="false">
+                    @if (_fiche.Engagements.Count == 0)
+                    {
+                        <EtatVide Icone="clipboard-list" Titre="Aucun engagement" />
+                    }
+                    else
+                    {
+                        <TableEngagements Lignes="_fiche.Engagements" />
+                    }
+                </AppCard>
+            </MudTabPanel>
+
+            <MudTabPanel Text="@($"Ajustements ({_fiche.Ajustements.Count})")">
+                <AppCard PaddingCorps="false">
+                    @if (_fiche.Ajustements.Count == 0)
+                    {
+                        <EtatVide Icone="adjustments" Titre="Aucun ajustement" />
+                    }
+                    else
+                    {
+                        <MudSimpleTable Dense="true" Hover="true">
+                            <thead><tr><th>Numéro</th><th>Date</th><th>Motif</th><th>Justification</th><th class="text-right">Montant</th><th>Statut</th></tr></thead>
+                            <tbody>
+                                @foreach (var a in _fiche.Ajustements)
+                                {
+                                    <tr>
+                                        <td class="font-mono text-xs">@a.Numero</td>
+                                        <td class="whitespace-nowrap">@a.Date.ToString("dd/MM/yyyy")</td>
+                                        <td>@a.Motif</td>
+                                        <td class="text-xs text-gray-600">@a.Justification</td>
+                                        <td class="tabular-nums text-right @(a.Montant < 0 ? "text-red-700" : "text-emerald-700")">@(a.Montant > 0 ? "+" : "")@Formats.Montant(a.Montant)</td>
+                                        <td><BadgeStatut Statut="a.Statut" /></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                </AppCard>
+            </MudTabPanel>
+
+            <MudTabPanel Text="@($"Reports reçus ({_fiche.Reports.Count})")">
+                <AppCard PaddingCorps="false">
+                    @if (_fiche.Reports.Count == 0)
+                    {
+                        <EtatVide Icone="clock" Titre="Aucun report" Message="Les reports sont créés à la clôture de l'exercice précédent." />
+                    }
+                    else
+                    {
+                        <MudSimpleTable Dense="true">
+                            <thead><tr><th>Type</th><th>Depuis</th><th>Engagement</th><th>Commentaire</th><th class="text-right">Montant</th></tr></thead>
+                            <tbody>
+                                @foreach (var r in _fiche.Reports)
+                                {
+                                    <tr>
+                                        <td>@LibellesExecution.TypeReport[r.Type]</td>
+                                        <td>@r.AnneeSource</td>
+                                        <td class="font-mono text-xs">@r.Engagement</td>
+                                        <td class="text-xs text-gray-600">@r.Commentaire</td>
+                                        <td class="tabular-nums text-right">@Formats.Montant(r.Montant)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                </AppCard>
+            </MudTabPanel>
+        </MudTabs>
+    }
+</AutoriseSi>
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    public static string Lien(Ulid id) => $"/execution/dotations/{id}";
+
+    private IReadOnlySet<TypeDroit> _droits = new HashSet<TypeDroit>();
+    private FicheDotation? _fiche;
+    private bool _charge;
+
+    private bool Saisissable => _fiche is { StatutExercice: StatutExercice.Ouvert, Dotation.Statut: StatutSaisie.Valide };
+
+    protected override async Task OnInitializedAsync()
+        => _droits = await Droits.ObtenirDroitsAsync(await UserContext.ObtenirUserIdAsync());
+
+    protected override async Task OnParametersSetAsync() => await ChargerAsync();
+
+    private async Task ChargerAsync()
+    {
+        _fiche = Ulid.TryParse(Id, out var id) ? await Situations.ObtenirAsync(id) : null;
+        _charge = true;
+    }
+
+    private async Task AjusterAsync()
+    {
+        var parametres = new DialogParameters<DialogAjustement>
+        {
+            { x => x.Saisie, new SaisieAjustement { DotationId = _fiche!.Dotation.Id, Date = DateOnly.FromDateTime(DateTime.Today) } },
+            { x => x.ExerciceId, _fiche.Dotation.ExerciceId },
+            { x => x.LibelleDotation, $"{_fiche.Dotation.LigneCode} — {_fiche.Dotation.LigneLibelle}" }
+        };
+        var dialog = await DialogService.ShowAsync<DialogAjustement>("Nouvel ajustement", parametres, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Ajustement soumis à validation.", Severity.Success);
+            await ChargerAsync();
+        }
+    }
+
+    private async Task EngagerAsync()
+    {
+        var parametres = new DialogParameters<DialogEngagement>
+        {
+            { x => x.Saisie, new SaisieEngagement { DotationId = _fiche!.Dotation.Id, Date = DateOnly.FromDateTime(DateTime.Today) } },
+            { x => x.ExerciceId, _fiche.Dotation.ExerciceId },
+            { x => x.LibelleDotation, $"{_fiche.Dotation.LigneCode} — {_fiche.Dotation.LigneLibelle}" }
+        };
+        var dialog = await DialogService.ShowAsync<DialogEngagement>("Nouvel engagement", parametres, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false, Data: Ulid engagementId }) Nav.NavigateTo(DetailEngagement.Lien(engagementId));
+    }
+}

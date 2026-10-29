@@ -1,0 +1,12 @@
+@inherits FormulaireBase<Devise>
+
+@* Formulaire de saisie : Devise. Généré à l'identique pour tous les référentiels ; les règles sont dans CatalogueReferentiels. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <MudTextField @bind-Value="Element.CodeIso" Label="Code ISO 4217" MaxLength="3" Required="true" RequiredError="Code ISO 4217 : obligatoire." HelperText="Trois lettres : XOF, EUR, USD…"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Symbole" Label="Symbole" MaxLength="10"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Libelle" Label="Libellé" MaxLength="50" Required="true" RequiredError="Libellé : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+</div>

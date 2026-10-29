@@ -1,0 +1,158 @@
+@page "/parametrage/seuils"
+@inject ISeuilAlerteService SeuilService
+@inject IReferentielService<Axe> ServiceAxe
+@inject IReferentielService<LigneBudgetaire> ServiceLigne
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Seuils d'alerte — Paramétrage</PageTitle>
+
+@*
+    Seuils d'alerte de consommation (80 / 90 / 100 % par défaut), globaux, par axe ou par
+    ligne budgétaire. Les alertes sont émises par le traitement planifié du module Consommation.
+*@
+
+<AutoriseSi DroitsRequis="new[] { TypeDroit.ParametrageLire, TypeDroit.ParametrageGerer }">
+    <PageHeader Titre="Seuils d'alerte" Description="Paliers de consommation qui déclenchent une alerte : globaux, par axe ou par ligne.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span>
+            <a href="/parametrage" class="hover:underline">Paramétrage</a>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <AppCard PaddingCorps="false" ClasseSup="lg:col-span-2">
+            <ChildContent>
+                @if (_seuils.Count == 0)
+                {
+                    <EtatVide Icone="exclamation" Titre="Aucun seuil" Message="Aucune alerte de consommation ne sera émise." />
+                }
+                else
+                {
+                    <MudTable Items="_seuils" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Portée</MudTh><MudTh>Cible</MudTh><MudTh>Seuil</MudTh><MudTh></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@LibellesParametrage.De(LibellesParametrage.PorteeSeuil, context.Portee)</MudTd>
+                            <MudTd><span class="text-sm text-gray-600">@(context.Cible ?? "Tout le budget")</span></MudTd>
+                            <MudTd>
+                                <span class="inline-flex items-center gap-2 font-semibold tabular-nums">
+                                    <span class="w-3 h-3 rounded-full" style="background:@(context.Couleur ?? "#9CA3AF")"></span>
+                                    @context.Pourcentage.ToString("0.##") %
+                                </span>
+                            </MudTd>
+                            <MudTd Style="text-align:right">
+                                @if (_peutGerer)
+                                {
+                                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => Editer(context)" />
+                                    <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerAsync(context)" />
+                                }
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </ChildContent>
+        </AppCard>
+
+        @if (_peutGerer)
+        {
+            <AppCard Titre="@(_saisie.Id == Ulid.Empty ? "Nouveau seuil" : "Modifier le seuil")">
+                <div class="space-y-4">
+                    @if (_erreur is not null)
+                    {
+                        <AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert>
+                    }
+                    <ChoixEnum TEnum="PorteeSeuil" Label="Portée" Libelles="LibellesParametrage.PorteeSeuil" @bind-Value="_saisie.Portee" />
+                    @if (_saisie.Portee == PorteeSeuil.Axe)
+                    {
+                        <ChoixReference Label="Axe" Elements="_axes" Obligatoire="true" Value="_saisie.AxeId" ValueChanged="v => _saisie.AxeId = v" />
+                    }
+                    @if (_saisie.Portee == PorteeSeuil.LigneBudgetaire)
+                    {
+                        <ChoixReference Label="Ligne budgétaire" Elements="_lignes" Obligatoire="true"
+                                        Value="_saisie.LigneBudgetaireId" ValueChanged="v => _saisie.LigneBudgetaireId = v" />
+                    }
+                    <MudNumericField T="decimal" @bind-Value="_saisie.Pourcentage" Label="Seuil (%)" Min="0" Max="1000"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudColorPicker Label="Couleur" ShowAlpha="false" ShowModeSwitch="false" ShowInputs="false"
+                                    Value="@(new MudBlazor.Utilities.MudColor(_saisie.Couleur ?? "#F59E0B"))"
+                                    ValueChanged="c => _saisie.Couleur = c.ToString(MudBlazor.Utilities.MudColorOutputFormats.Hex)"
+                                    Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <div class="flex justify-end gap-2">
+                        @if (_saisie.Id != Ulid.Empty)
+                        {
+                            <AppButton Variante="ghost" OnClick="Reinitialiser">Annuler</AppButton>
+                        }
+                        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+                    </div>
+                </div>
+            </AppCard>
+        }
+    </div>
+</AutoriseSi>
+
+@code {
+    private List<LigneSeuil> _seuils = new();
+    private List<ElementListe> _axes = new();
+    private List<ElementListe> _lignes = new();
+    private SaisieSeuil _saisie = new();
+    private bool _peutGerer;
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutGerer = await ServiceAxe.PeutGererAsync();
+        _seuils = await SeuilService.ListerAsync();
+        if (_peutGerer)
+        {
+            _axes = await ServiceAxe.ListerPourSelectionAsync();
+            _lignes = await ServiceLigne.ListerPourSelectionAsync();
+        }
+    }
+
+    private void Editer(LigneSeuil s)
+    {
+        _erreur = null;
+        _saisie = new SaisieSeuil
+        {
+            Id = s.Id, Portee = s.Portee, AxeId = s.AxeId, LigneBudgetaireId = s.LigneBudgetaireId,
+            Pourcentage = s.Pourcentage, Couleur = s.Couleur
+        };
+    }
+
+    private void Reinitialiser()
+    {
+        _erreur = null;
+        _saisie = new SaisieSeuil();
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await SeuilService.EnregistrerAsync(_saisie);
+        _enregistrement = false;
+        if (!ok) return;
+
+        Snackbar.Add("Seuil enregistré.", Severity.Success);
+        Reinitialiser();
+        _seuils = await SeuilService.ListerAsync();
+    }
+
+    private async Task SupprimerAsync(LigneSeuil s)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, $"Supprimer le seuil de {s.Pourcentage:0.##} %" },
+            { x => x.Message, "Plus aucune alerte ne sera émise à ce palier." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        var dialog = await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres);
+        if (await dialog.Result is not { Canceled: false }) return;
+
+        var (ok, erreur) = await SeuilService.SupprimerAsync(s.Id);
+        Snackbar.Add(ok ? "Seuil supprimé." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) _seuils = await SeuilService.ListerAsync();
+    }
+}

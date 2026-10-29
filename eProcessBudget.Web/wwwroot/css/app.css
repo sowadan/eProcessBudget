@@ -1,0 +1,310 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Styles globaux de l'application.
+
+   LES COULEURS NE SONT PAS ÉCRITES ICI : elles arrivent en variables CSS
+   (--app-primaire, --app-secondaire, --app-tertiaire, --app-accent) injectées
+   par App.razor depuis la section "Application:Couleurs" de appsettings.json.
+
+   Pour changer la charte, modifiez appsettings.json — pas ce fichier.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+    /* Valeurs de repli si l'injection échoue (App.razor les écrase au rendu). */
+    --app-primaire:    #C10A27;
+    --app-secondaire:  #01394F;
+    --app-tertiaire:   #540421;
+    --app-accent:      #FFB928;
+
+    /* Teintes dérivées, utilisées pour les états survol / actif. */
+    --app-primaire-10: color-mix(in srgb, var(--app-primaire) 10%, transparent);
+    --app-primaire-20: color-mix(in srgb, var(--app-primaire) 20%, transparent);
+}
+
+html, body {
+    height: 100%;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+}
+
+/* ── Alignement de MudBlazor sur la charte ───────────────────────────────── */
+.mud-button-filled.mud-button-filled-primary   { background-color: var(--app-primaire)   !important; }
+.mud-button-filled.mud-button-filled-secondary { background-color: var(--app-secondaire) !important; }
+
+.mud-tab-active {
+    color: var(--app-primaire) !important;
+    border-bottom-color: var(--app-primaire) !important;
+}
+
+/* En-tête de tableau : gris clair, majuscules, lisible en un coup d'œil. */
+.mud-table-head th {
+    background-color: #f1f5f9 !important;
+    font-weight: 600 !important;
+    font-size: 12px !important;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #374151 !important;
+}
+
+/* ── Barres de défilement discrètes ──────────────────────────────────────── */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ── Navigation latérale : état actif ────────────────────────────────────── */
+.nav-item.active,
+a.nav-item[aria-current="page"] {
+    background-color: var(--app-primaire-20) !important;
+    color: #ffffff !important;
+}
+
+/* ── Animations ──────────────────────────────────────────────────────────── */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fadeIn 0.2s ease-out; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Utilitaires ─────────────────────────────────────────────────────────── */
+
+/* Tronque un texte sur N lignes (Tailwind line-clamp n'est pas dans le CDN de base). */
+.line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Tout conteneur large (tableau, diagramme) défile chez lui, jamais la page. */
+.zone-defilante { overflow-x: auto; }
+
+/* ── Impression ──────────────────────────────────────────────────────────── */
+@media print {
+    aside, nav, header,
+    .mud-nav-menu, .mud-appbar, .mud-drawer,
+    button, .mud-button-root, .mud-tabs-toolbar { display: none !important; }
+
+    main, .mud-main-content { margin: 0 !important; padding: 0 !important; }
+    #zone-impression { width: 100% !important; }
+
+    body  { background: white !important; font-size: 11px; }
+    table { page-break-inside: auto; }
+    tr    { page-break-inside: avoid; }
+}
+
+
+
+/* ═══ Pages du compte (connexion, mot de passe) — rendu statique, sans MudBlazor ═══ */
+.champ-compte {
+    display: block;
+    width: 100%;
+    padding: 0.625rem 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    color: #1f2937;
+    background-color: #fff;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.champ-compte:focus {
+    outline: none;
+    border-color: var(--app-secondaire);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-secondaire) 20%, transparent);
+}
+.champ-compte.invalid { border-color: #dc2626; }
+
+.bouton-compte {
+    display: block;
+    width: 100%;
+    padding: 0.625rem 1rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #fff;
+    background-color: var(--app-primaire);
+    transition: opacity 0.15s;
+}
+.bouton-compte:hover { opacity: 0.9; }
+.bouton-compte:focus-visible { outline: 3px solid color-mix(in srgb, var(--app-primaire) 40%, transparent); outline-offset: 2px; }
+
+/* ═══ Logotype (AppMarque) — couleurs du logo horizontal fourni ═══════════════ */
+.marque { display: inline-flex; align-items: center; gap: 0.625rem; min-width: 0; }
+.marque-nom {
+    display: block;
+    font-weight: 700;
+    font-size: 1rem;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.marque-description {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.marque-grande { gap: 1rem; }
+.marque-grande .marque-nom { font-size: 1.875rem; }
+.marque-grande .marque-description { font-size: 0.75rem; margin-top: 0.3rem; }
+
+.marque-fond-sombre .marque-nom         { color: #FFFFFF; }
+.marque-fond-sombre .marque-accent      { color: #6FB4F2; }
+.marque-fond-sombre .marque-description { color: #B9C7DD; }
+.marque-fond-clair  .marque-nom         { color: #1F3864; }
+.marque-fond-clair  .marque-accent      { color: #2E75B6; }
+.marque-fond-clair  .marque-description { color: #4F5F78; }
+
+/* ── Cartes (AppCard) et tuiles d'indicateur (AppStatCard) ───────────────────
+   Teintes tirées de la charte : un filet de couleur en tête, un en-tête légèrement
+   teinté, des tuiles colorées dont la teinte vient de chaque indicateur.
+   ─────────────────────────────────────────────────────────────────────────── */
+.carte {
+    background: #fff;
+    border: 1px solid color-mix(in srgb, var(--app-secondaire) 10%, #e5e7eb);
+    border-radius: 0.875rem;
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--app-secondaire) 8%, transparent),
+                0 1px 3px color-mix(in srgb, var(--app-secondaire) 6%, transparent);
+    overflow: hidden;
+}
+/* Carte titrée : filet de charte en tête, en-tête teinté. */
+.carte-titree { border-top: 3px solid var(--app-primaire); }
+.carte-entete {
+    background: linear-gradient(90deg,
+        color-mix(in srgb, var(--app-primaire) 8%, #fff) 0%,
+        color-mix(in srgb, var(--app-primaire) 3%, #fff) 45%,
+        #fff 100%);
+    border-bottom: 1px solid color-mix(in srgb, var(--app-primaire) 12%, #eef0f4);
+}
+.carte-entete h3 { color: var(--app-secondaire); }
+.carte-pied {
+    background: color-mix(in srgb, var(--app-secondaire) 4%, #fff);
+    border-top: 1px solid color-mix(in srgb, var(--app-secondaire) 10%, #eef0f4);
+}
+
+/* Tuile d'indicateur : --teinte (icône, filet) et --teinte-fond (fond clair) par tuile. */
+.tuile {
+    --teinte: var(--app-primaire);
+    --teinte-fond: color-mix(in srgb, var(--app-primaire) 12%, #fff);
+    position: relative;
+    overflow: hidden;
+    border-radius: 0.875rem;
+    padding: 1.15rem 1.25rem 1.1rem;
+    border: 1px solid color-mix(in srgb, var(--teinte) 22%, #fff);
+    border-top: 4px solid var(--teinte);
+    background:
+        radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--teinte-fond) 90%, #fff) 0%, transparent 60%),
+        linear-gradient(180deg, color-mix(in srgb, var(--teinte-fond) 55%, #fff) 0%, #fff 75%);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--teinte) 10%, transparent);
+    transition: box-shadow .15s ease, transform .15s ease;
+}
+.tuile:hover {
+    box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--teinte) 35%, transparent);
+    transform: translateY(-1px);
+}
+/* Grand rond décoratif, très discret, dans l'angle. */
+.tuile::after {
+    content: "";
+    position: absolute;
+    right: -1.75rem;
+    bottom: -1.75rem;
+    width: 6rem;
+    height: 6rem;
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--teinte) 7%, transparent);
+    pointer-events: none;
+}
+.tuile-icone {
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    background: linear-gradient(135deg, var(--teinte) 0%, color-mix(in srgb, var(--teinte) 75%, #000) 100%);
+    box-shadow: 0 4px 10px -3px color-mix(in srgb, var(--teinte) 55%, transparent);
+    flex-shrink: 0;
+}
+.tuile-libelle {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--teinte) 55%, #374151);
+}
+.tuile-valeur {
+    color: var(--app-secondaire);
+    font-variant-numeric: tabular-nums;
+}
+.tuile-sous-titre { color: color-mix(in srgb, var(--app-secondaire) 55%, #9ca3af); }
+
+@media (prefers-reduced-motion: reduce) {
+    .tuile, .tuile:hover { transition: none; transform: none; }
+}
+
+
+/* ── Visites guidées (driver.js, voir js/guide.js) : bulles aux couleurs de la charte ── */
+.driver-popover.epb-guide {
+    font-family: 'Inter', system-ui, sans-serif;
+    border-radius: 0.75rem;
+    border-top: 4px solid var(--app-primaire);
+    padding: 1rem 1.1rem 0.9rem;
+    max-width: 360px;
+    box-shadow: 0 12px 32px -8px rgba(1, 57, 79, 0.35);
+}
+.driver-popover.epb-guide .driver-popover-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--app-secondaire);
+}
+.driver-popover.epb-guide .driver-popover-description {
+    font-size: 13px;
+    line-height: 1.5;
+    color: #4b5563;
+}
+.driver-popover.epb-guide .driver-popover-progress-text { font-size: 12px; color: #9ca3af; }
+.driver-popover.epb-guide .driver-popover-footer button {
+    font-family: inherit;
+    font-size: 12px;
+    text-shadow: none;
+    border-radius: 0.5rem;
+    padding: 0.35rem 0.75rem;
+    border: 1px solid #d1d5db;
+    color: #374151;
+    background: #fff;
+}
+.driver-popover.epb-guide .driver-popover-footer .driver-popover-next-btn {
+    background: var(--app-secondaire);
+    border-color: var(--app-secondaire);
+    color: #fff;
+}
+.driver-popover.epb-guide .driver-popover-footer button:hover { opacity: 0.9; }
+.driver-popover.epb-guide .driver-popover-close-btn { color: #9ca3af; }
+.driver-popover.epb-guide .driver-popover-close-btn:hover { color: var(--app-primaire); }
+
+/* ── Erreur fatale du circuit (affichée par blazor.web.js) ─────────────────── */
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    z-index: 2000;
+    padding: 0.75rem 3rem 0.75rem 1.25rem;
+    background: #fef2f2;
+    border-top: 1px solid #fecaca;
+    color: #b91c1c;
+    font-size: 0.875rem;
+    box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.08);
+}
+#blazor-error-ui .reload { margin-left: 0.5rem; font-weight: 600; text-decoration: underline; color: inherit; }
+#blazor-error-ui .dismiss { position: absolute; right: 1rem; top: 0.5rem; font-size: 1.25rem; line-height: 1; cursor: pointer; }

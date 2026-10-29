@@ -1,0 +1,25 @@
+@page "/parametrage/plan-comptable"
+
+<PageTitle>Paramétrage</PageTitle>
+
+@* Référentiel CompteComptable : colonnes de la liste. Tout le reste (droits, filtres, saisie, Excel) vient de PageReferentiel. *@
+
+<PageReferentiel T="CompteComptable" Formulaire="typeof(FormulaireCompteComptable)"
+                 Description="Comptes généraux et auxiliaires, dont les comptes d'immobilisations.">
+    <EnTetes>
+        <MudTh>Numéro</MudTh>
+        <MudTh>Libellé</MudTh>
+        <MudTh>Classe</MudTh>
+        <MudTh>Type</MudTh>
+        <MudTh>Regroupement</MudTh>
+        <MudTh>Immo.</MudTh>
+    </EnTetes>
+    <Colonnes>
+        <MudTd DataLabel="Numéro"><span class="font-mono text-xs font-semibold text-gray-800">@context.Numero</span></MudTd>
+        <MudTd DataLabel="Libellé"><span class="text-sm text-gray-700">@context.Libelle</span></MudTd>
+        <MudTd DataLabel="Classe"><span class="text-sm text-gray-500">@context.Classe</span></MudTd>
+        <MudTd DataLabel="Type"><span class="text-sm text-gray-500">@LibellesParametrage.De(LibellesParametrage.TypeCompte, context.TypeCompte)</span></MudTd>
+        <MudTd DataLabel="Regroupement"><span class="text-sm text-gray-500">@(context.CompteParent?.Numero ?? "—")</span></MudTd>
+        <MudTd DataLabel="Immo."><span class="text-sm text-gray-500">@(context.EstImmobilisation ? "Oui" : "—")</span></MudTd>
+    </Colonnes>
+</PageReferentiel>

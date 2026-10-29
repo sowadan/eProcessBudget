@@ -1,0 +1,82 @@
+@page "/axes/investissements"
+@inject ISyntheseAxeService Synthese
+
+<PageTitle>Investissements — Axes de dépenses</PageTitle>
+
+@*
+    Axe Investissements (cahier fonctionnel § 3.6) : projets d'investissement (source RI /
+    RE), et la situation de l'axe par site, par service et par rubrique. Les dotations par
+    site et par service se saisissent dans Exécution budgétaire › Dotations ; les comptes
+    d'immobilisation sont rattachés aux lignes dans la nomenclature.
+*@
+
+<AutoriseSi DroitsRequis="Axe.Lecture">
+    <PageHeader Titre="Investissements" Description="Projets d'investissement par site, service, rubrique et source de financement.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><span>Axes de dépenses</span>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+    </AppCard>
+
+    @if (_exercice is not null)
+    {
+        <CartesAxe Montants="_totaux" />
+    }
+
+    <MudTabs Elevation="0" Rounded="true" TabPanelsClass="pt-4" ActivePanelIndexChanged="ChangerOngletAsync">
+        <MudTabPanel Text="Projets">
+            <ListeProjets Axe="Axe" Exercice="_exercice" />
+        </MudTabPanel>
+        <MudTabPanel Text="Par site">
+            <AppCard PaddingCorps="false"><TableauRegroupement Lignes="LignesDe(Regroupement.Site)" LibelleColonne="Site" /></AppCard>
+        </MudTabPanel>
+        <MudTabPanel Text="Par service">
+            <AppCard PaddingCorps="false"><TableauRegroupement Lignes="LignesDe(Regroupement.Structure)" LibelleColonne="Service" /></AppCard>
+        </MudTabPanel>
+        <MudTabPanel Text="Par rubrique">
+            <AppCard PaddingCorps="false"><TableauRegroupement Lignes="LignesDe(Regroupement.Rubrique)" LibelleColonne="Rubrique" /></AppCard>
+        </MudTabPanel>
+        <MudTabPanel Text="Par nature">
+            <AppCard PaddingCorps="false"><TableauRegroupement Lignes="LignesDe(Regroupement.Nature)" LibelleColonne="Nature de dépense" /></AppCard>
+        </MudTabPanel>
+    </MudTabs>
+</AutoriseSi>
+
+@code {
+    private static readonly AxeDepense Axe = AxesDepense.Investissement;
+
+    /// <summary>Regroupement de chaque onglet (l'onglet 0 est la liste des projets).</summary>
+    private static readonly Regroupement[] Onglets = [0, Regroupement.Site, Regroupement.Structure, Regroupement.Rubrique, Regroupement.Nature];
+
+    private LigneExercice? _exercice;
+    private MontantsDotation _totaux = MontantsDotation.Zero;
+    private readonly Dictionary<Regroupement, List<LigneRegroupement>> _regroupements = new();
+    private int _onglet;
+
+    private List<LigneRegroupement> LignesDe(Regroupement r) => _regroupements.GetValueOrDefault(r) ?? new();
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        _regroupements.Clear();
+        if (e is null) return;
+        _totaux = await Synthese.TotauxAsync(Axe, e.Id);
+        await ChargerOngletAsync();
+    }
+
+    private async Task ChangerOngletAsync(int index)
+    {
+        _onglet = index;
+        await ChargerOngletAsync();
+    }
+
+    /// <summary>Un regroupement n'est calculé qu'à l'ouverture de son onglet.</summary>
+    private async Task ChargerOngletAsync()
+    {
+        if (_exercice is null || _onglet == 0 || _regroupements.ContainsKey(Onglets[_onglet])) return;
+        _regroupements[Onglets[_onglet]] = await Synthese.RegrouperAsync(Axe, _exercice.Id, Onglets[_onglet]);
+    }
+}

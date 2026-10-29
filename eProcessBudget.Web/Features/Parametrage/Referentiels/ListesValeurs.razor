@@ -1,0 +1,50 @@
+@page "/parametrage/listes-valeurs"
+@using System.Linq.Expressions
+
+<PageTitle>Paramétrage</PageTitle>
+
+@*
+    Listes de valeurs simples (types de structure, de voie, de prestation, catégories,
+    sources de vérification, périodicités...). Le filtre par liste est propre à cette page.
+*@
+
+<PageReferentiel T="ListeValeur" Formulaire="typeof(FormulaireListeValeur)" Condition="_condition" Nouveau="NouvelleValeur"
+                 Description="Valeurs proposées dans les formulaires : types, catégories, sources de vérification, périodicités…">
+    <Filtres>
+        <MudSelect T="string" Value="_categorie" ValueChanged="ChangerCategorie" Label="Liste" Clearable="true"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:240px;"
+                   ToStringFunc="@(c => c is null ? "" : CategoriesListeValeur.Libelle(c))">
+            @foreach (var (categorie, libelle) in CategoriesListeValeur.Toutes)
+            {
+                <MudSelectItem T="string" Value="@categorie">@libelle</MudSelectItem>
+            }
+        </MudSelect>
+    </Filtres>
+    <EnTetes>
+        <MudTh>Liste</MudTh>
+        <MudTh>Code</MudTh>
+        <MudTh>Libellé</MudTh>
+        <MudTh>Ordre</MudTh>
+    </EnTetes>
+    <Colonnes>
+        <MudTd DataLabel="Liste"><span class="text-sm text-gray-500">@CategoriesListeValeur.Libelle(context.Categorie)</span></MudTd>
+        <MudTd DataLabel="Code"><span class="font-mono text-xs font-semibold text-gray-800">@context.Code</span></MudTd>
+        <MudTd DataLabel="Libellé"><span class="text-sm text-gray-700">@context.Libelle</span></MudTd>
+        <MudTd DataLabel="Ordre"><span class="text-sm text-gray-500">@context.Ordre</span></MudTd>
+    </Colonnes>
+</PageReferentiel>
+
+@code {
+    private string? _categorie;
+
+    // Champ, et non lambda dans le balisage : une nouvelle expression à chaque rendu rechargerait la liste.
+    private Expression<Func<ListeValeur, bool>>? _condition;
+
+    private void ChangerCategorie(string? categorie)
+    {
+        _categorie = categorie;
+        _condition = categorie is null ? null : l => l.Categorie == categorie;
+    }
+
+    private ListeValeur NouvelleValeur() => new() { Categorie = _categorie ?? "" };
+}

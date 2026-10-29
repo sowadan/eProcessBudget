@@ -1,0 +1,44 @@
+@using Microsoft.Extensions.Options
+@inject IOptions<ApplicationOptions> AppOptions
+
+@*
+    Logotype : icône + nom de l'application + description en petites capitales, comme sur
+    le logo horizontal. Le nom est du texte (net, traduisible, lisible par un lecteur
+    d'écran) ; ses couleurs sont dans app.css (.marque-*).
+
+    <AppMarque FondSombre="true" />              barre latérale
+    <AppMarque FondSombre="true" Grande="true" /> page de connexion
+*@
+
+<span class="marque @(FondSombre ? "marque-fond-sombre" : "marque-fond-clair") @(Grande ? "marque-grande" : "") @Class">
+    <AppLogo FondSombre="FondSombre" Pixels="@(Grande ? 64 : 36)" Class="flex-shrink-0"
+             Style="@(Grande ? "width:4rem;height:4rem;font-size:1.25rem;" : "width:2.25rem;height:2.25rem;font-size:0.8rem;")" />
+    <span class="min-w-0">
+        <span class="marque-nom">
+            @if (AppOptions.Value.AccentPremiereLettre && Nom.Length > 1)
+            {
+                <span class="marque-accent">@Nom[..1]</span>@Nom[1..]
+            }
+            else
+            {
+                @Nom
+            }
+        </span>
+        @if (!string.IsNullOrWhiteSpace(AppOptions.Value.Description))
+        {
+            <span class="marque-description">@AppOptions.Value.Description</span>
+        }
+    </span>
+</span>
+
+@code {
+    /// <summary>true sur un fond sombre (barre latérale, connexion) : icône et texte clairs.</summary>
+    [Parameter] public bool FondSombre { get; set; }
+
+    /// <summary>Version grand format (page de connexion).</summary>
+    [Parameter] public bool Grande { get; set; }
+
+    [Parameter] public string Class { get; set; } = "";
+
+    private string Nom => AppOptions.Value.NomCourt?.Trim() is { Length: > 0 } n ? n : AppOptions.Value.Nom;
+}

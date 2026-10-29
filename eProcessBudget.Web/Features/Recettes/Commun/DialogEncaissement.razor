@@ -1,0 +1,60 @@
+@inject IPrevisionRecetteService Previsions
+@inject IEncaissementService Service
+
+@*
+    Encaissement : la prévision (nature, site) encaissée, la date (dans l'exercice ouvert, mois
+    non clos), le montant, le compte crédité (l'encaissement est alors positionné) et la
+    référence de la pièce.
+*@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="sm:col-span-2">
+                <ChoixReference Label="Prévision (ligne, nature, site)" Elements="_previsions" Obligatoire="true"
+                                Value="Saisie.PrevisionRecetteId" ValueChanged="v => Saisie.PrevisionRecetteId = v" />
+            </div>
+            <ChampDate Label="Date de l'encaissement" Obligatoire="true" @bind-Value="Saisie.Date" />
+            <MudNumericField T="decimal" @bind-Value="Saisie.Montant" Label="Montant" Min="0" Format="N2" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <div class="sm:col-span-2">
+                <ChoixReference Label="Compte bancaire crédité" Elements="_comptes" Value="Saisie.CompteBancaireId" ValueChanged="v => Saisie.CompteBancaireId = v"
+                                HelperText="Sans compte, la ressource est acquise mais non positionnée." />
+            </div>
+            <div class="sm:col-span-2">
+                <MudTextField @bind-Value="Saisie.Reference" Label="Référence de la pièce" MaxLength="100" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public SaisieEncaissement Saisie { get; set; } = new();
+    [Parameter, EditorRequired] public Ulid ExerciceId { get; set; }
+
+    private List<ElementListe> _previsions = new(), _comptes = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _previsions = await Previsions.RechercherAsync(ExerciceId);
+        _comptes = await Service.ListerComptesAsync();
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.EnregistrerAsync(Saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

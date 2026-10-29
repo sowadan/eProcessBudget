@@ -1,0 +1,297 @@
+@typeparam T where T : EntiteOrganisme, new()
+@using System.Linq.Expressions
+@inject IReferentielService<T> Service
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+@*
+    Écran type d'un référentiel du Paramétrage : recherche, filtre actif / inactif,
+    pagination côté serveur, création, modification, activation, suppression logique,
+    export et import Excel. Chaque page ne fournit que ses colonnes et son formulaire :
+
+    <PageReferentiel T="Site" Formulaire="typeof(FormulaireSite)">
+        <EnTetes><MudTh>Code</MudTh><MudTh>Nom</MudTh></EnTetes>
+        <Colonnes><MudTd>@context.Code</MudTd><MudTd>@context.Nom</MudTd></Colonnes>
+    </PageReferentiel>
+
+    Les droits (ParametrageLire / ParametrageGerer) sont vérifiés par le service ;
+    l'écran n'affiche les boutons de modification qu'à qui peut les utiliser.
+*@
+
+<AutoriseSi DroitsRequis="D.DroitsLecture">
+
+    <PageHeader Titre="@D.Titre" Description="@Description">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a>
+            <span>/</span>
+            <a href="@LienRubrique" class="hover:underline">@Rubrique</a>
+        </BreadcrumbContent>
+        <ActionsContent>
+            @if (D.Colonnes.Count > 0)
+            {
+                <AppButton Variante="outline" Icone="download" EnChargement="_export" OnClick="ExporterAsync">Exporter</AppButton>
+            }
+            @if (_peutGerer)
+            {
+                @if (D.Colonnes.Count > 0)
+                {
+                    <AppButton Variante="outline" OnClick="ImporterAsync">Importer</AppButton>
+                }
+                <AppButton Icone="plus" OnClick="CreerAsync">Ajouter</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    <!-- ═══ Filtres  -->
+    <AppCard ClasseSup="mb-6">
+        <div class="flex flex-col sm:flex-row gap-3 sm:items-center">
+            <MudTextField T="string" @bind-Value="_recherche" @bind-Value:after="RechercherAsync"
+                          Placeholder="Code ou libellé…" DebounceInterval="300"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                          Class="flex-1" />
+            @Filtres
+            @if (D.EstActivable)
+            {
+                <MudSelect T="string" @bind-Value="_filtreEtat" @bind-Value:after="RechercherAsync"
+                           Label="État" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:150px;">
+                    <MudSelectItem Value="@("tous")">Tous</MudSelectItem>
+                    <MudSelectItem Value="@("actifs")">Actifs</MudSelectItem>
+                    <MudSelectItem Value="@("inactifs")">Inactifs</MudSelectItem>
+                </MudSelect>
+            }
+        </div>
+    </AppCard>
+
+    <!-- ═══ Liste  -->
+    <AppCard PaddingCorps="false">
+        <ChildContent>
+            @if (_chargement)
+            {
+                <div class="flex justify-center py-16">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                </div>
+            }
+            else if (_items.Count == 0)
+            {
+                <EtatVide Icone="collection" Titre="Aucun élément"
+                          Message="@(_peutGerer ? "Ajoutez un premier élément, ou importez-les depuis Excel." : "Aucun élément ne correspond à ces critères.")" />
+            }
+            else
+            {
+                <div class="zone-defilante">
+                    <MudTable Items="_items" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            @EnTetes
+                            @if (D.EstActivable)
+                            {
+                                <MudTh>État</MudTh>
+                            }
+                            <MudTh></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            @Colonnes(context)
+                            @if (context is IActivable activable)
+                            {
+                                <MudTd DataLabel="État">
+                                    <AppBadge Variante="@(activable.EstActif ? "success" : "neutral")" Petit="true">
+                                        @(activable.EstActif ? "Actif" : "Inactif")
+                                    </AppBadge>
+                                </MudTd>
+                            }
+                            <MudTd Style="text-align:right; white-space:nowrap;">
+                                @if (ActionsSupplementaires is not null)
+                                {
+                                    @ActionsSupplementaires(context)
+                                }
+                                @if (_peutGerer)
+                                {
+                                    <MudTooltip Text="Modifier">
+                                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => ModifierAsync(context)" />
+                                    </MudTooltip>
+                                    @if (context is IActivable a)
+                                    {
+                                        <MudTooltip Text="@(a.EstActif ? "Désactiver" : "Activer")">
+                                            <MudIconButton Size="Size.Small"
+                                                           Icon="@(a.EstActif ? Icons.Material.Outlined.ToggleOn : Icons.Material.Outlined.ToggleOff)"
+                                                           OnClick="() => BasculerAsync(context, !a.EstActif)" />
+                                        </MudTooltip>
+                                    }
+                                    <MudTooltip Text="Supprimer">
+                                        <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete"
+                                                       OnClick="() => SupprimerAsync(context)" />
+                                    </MudTooltip>
+                                }
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </div>
+            }
+        </ChildContent>
+
+        <PiedContent>
+            <div class="flex items-center justify-between gap-4 flex-wrap">
+                <p class="text-xs text-gray-500">@_total élément(s)</p>
+                @if (_total > Taille)
+                {
+                    <MudPagination Count="@((int)Math.Ceiling(_total / (double)Taille))"
+                                   Selected="_page" SelectedChanged="ChangerPageAsync"
+                                   Color="Color.Primary" Size="Size.Small" />
+                }
+            </div>
+        </PiedContent>
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    [Parameter, EditorRequired] public Type Formulaire { get; set; } = null!;
+    [Parameter, EditorRequired] public RenderFragment EnTetes { get; set; } = null!;
+    [Parameter, EditorRequired] public RenderFragment<T> Colonnes { get; set; } = null!;
+
+    /// <summary>Filtres propres à la page (ex. catégorie), placés à côté de la recherche.</summary>
+    [Parameter] public RenderFragment? Filtres { get; set; }
+
+    /// <summary>Restriction de la liste posée par la page ; changer sa valeur recharge la liste.</summary>
+    [Parameter] public Expression<Func<T, bool>>? Condition { get; set; }
+
+    /// <summary>Boutons propres à la page, au début de la colonne d'actions.</summary>
+    [Parameter] public RenderFragment<T>? ActionsSupplementaires { get; set; }
+
+    /// <summary>Élément proposé à la création (valeurs par défaut, filtre en cours...).</summary>
+    [Parameter] public Func<T>? Nouveau { get; set; }
+
+    [Parameter] public string Description { get; set; } = "";
+
+    /// <summary>Rubrique du fil d'Ariane (module de rattachement).</summary>
+    [Parameter] public string Rubrique { get; set; } = "Paramétrage";
+    [Parameter] public string LienRubrique { get; set; } = "/parametrage";
+    [Parameter] public int Taille { get; set; } = 20;
+
+    private DescripteurReferentiel<T> D => Service.Descripteur;
+
+    private List<T> _items = new();
+    private int _total;
+    private int _page = 1;
+    private bool _chargement = true;
+    private bool _peutGerer;
+    private bool _export;
+    private string _recherche = "";
+    private string _filtreEtat = "tous";
+    private Expression<Func<T, bool>>? _conditionChargee;
+
+    protected override async Task OnInitializedAsync() => _peutGerer = await Service.PeutGererAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Premier rendu, ou filtre de la page modifié : on recharge depuis la première page.
+        if (_conditionChargee != Condition || _chargement)
+        {
+            _conditionChargee = Condition;
+            _page = 1;
+            await ChargerAsync();
+        }
+    }
+
+    /// <summary>Recharge la liste (appelable par la page après une action propre).</summary>
+    public async Task ChargerAsync()
+    {
+        _chargement = true;
+        bool? actif = _filtreEtat switch { "actifs" => true, "inactifs" => false, _ => null };
+        (_items, _total) = await Service.ListerAsync(new FiltreReferentiel<T>(_recherche, actif, Condition, _page, Taille));
+        _chargement = false;
+        StateHasChanged();
+    }
+
+    private async Task RechercherAsync()
+    {
+        _page = 1;
+        await ChargerAsync();
+    }
+
+    private async Task ChangerPageAsync(int page)
+    {
+        _page = page;
+        await ChargerAsync();
+    }
+
+    private async Task CreerAsync()
+        => await OuvrirFormulaireAsync(Nouveau?.Invoke() ?? new T(), $"Ajouter {D.Element}", "Élément ajouté.");
+
+    private async Task ModifierAsync(T ligne)
+    {
+        // Copie fraîche (avec son RowVersion) : une annulation ne laisse rien dans la liste.
+        var element = await Service.ObtenirAsync(ligne.Id);
+        if (element is null)
+        {
+            Snackbar.Add("Élément introuvable : la liste a été rechargée.", Severity.Warning);
+            await ChargerAsync();
+            return;
+        }
+        await OuvrirFormulaireAsync(element, $"Modifier {D.Element} « {D.LireCode(element)} »", "Modification enregistrée.");
+    }
+
+    private async Task OuvrirFormulaireAsync(T element, string titre, string message)
+    {
+        var parametres = new DialogParameters<DialogReferentiel<T>>
+        {
+            { x => x.Element, element },
+            { x => x.Formulaire, Formulaire }
+        };
+        var dialog = await DialogService.ShowAsync<DialogReferentiel<T>>(titre, parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is not { Canceled: false }) return;
+
+        Snackbar.Add(message, Severity.Success);
+        await ChargerAsync();
+    }
+
+    private async Task BasculerAsync(T element, bool actif)
+    {
+        var (ok, erreur) = await Service.ChangerEtatAsync(element.Id, actif);
+        Snackbar.Add(ok ? (actif ? "Élément activé." : "Élément désactivé.") : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync();
+    }
+
+    private async Task SupprimerAsync(T element)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, $"Supprimer « {D.LireCode(element)} — {D.LireLibelle(element)} »" },
+            { x => x.Message, "La suppression est refusée si l'élément est utilisé ; il reste alors possible de le désactiver." },
+            { x => x.Libelle, "Supprimer" },
+            { x => x.Danger, true }
+        };
+        var dialog = await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres);
+        if (await dialog.Result is not { Canceled: false }) return;
+
+        var (ok, erreur) = await Service.SupprimerAsync(element.Id);
+        Snackbar.Add(ok ? "Élément supprimé." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync();
+    }
+
+    private async Task ExporterAsync()
+    {
+        _export = true;
+        try
+        {
+            var octets = await Service.ExporterAsync();
+            if (octets is null) return;
+
+            using var flux = new MemoryStream(octets);
+            using var reference = new DotNetStreamReference(flux);
+            await JS.InvokeVoidAsync("appTelechargerFlux", $"{D.Cle}-{DateTime.Now:yyyyMMdd}.xlsx", reference);
+        }
+        finally
+        {
+            _export = false;
+        }
+    }
+
+    private async Task ImporterAsync()
+    {
+        var dialog = await DialogService.ShowAsync<DialogImport<T>>($"Importer : {D.Titre}",
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) await ChargerAsync();
+    }
+}

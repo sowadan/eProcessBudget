@@ -1,0 +1,27 @@
+@inherits FormulaireBase<Programme>
+@inject IProgrammeService Programmes
+
+@* Programme : code (P1…), libellé, objectif général, responsable unique, présentation. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <MudTextField @bind-Value="Element.Code" Label="Code" MaxLength="10" Required="true" RequiredError="Code : obligatoire."
+                  HelperText="P1, P2…" Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Libelle" Label="Libellé" MaxLength="250" Required="true" RequiredError="Libellé : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+    <MudTextField @bind-Value="Element.ObjectifGeneral" Label="Objectif général (stratégique)" MaxLength="500" Lines="2" Required="true"
+                  RequiredError="Objectif général : obligatoire." Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-3" />
+    <div class="sm:col-span-2">
+        <ChoixReference Label="Responsable du programme" Elements="_responsables" Obligatoire="true"
+                        HelperText="Une seule personne par programme."
+                        Value="Element.ResponsableId" ValueChanged="v => Element.ResponsableId = v ?? Ulid.Empty" />
+    </div>
+    <MudNumericField T="int" @bind-Value="Element.Ordre" Label="Ordre d'affichage" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Presentation" Label="Présentation du programme" Lines="5" MaxLength="20000"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-3" />
+</div>
+
+@code {
+    private List<ElementListe> _responsables = new();
+
+    protected override async Task OnInitializedAsync() => _responsables = await Programmes.ListerResponsablesPossiblesAsync();
+}

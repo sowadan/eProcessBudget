@@ -1,0 +1,32 @@
+@inherits FormulaireBase<Agent>
+@inject IReferentielService<CategorieEmploi> ServiceCategorieEmploi
+@inject IReferentielService<Site> ServiceSite
+@inject IReferentielService<Structure> ServiceStructure
+
+@* Formulaire de saisie : Agent. Généré à l'identique pour tous les référentiels ; les règles sont dans CatalogueReferentiels. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <MudTextField @bind-Value="Element.Matricule" Label="Matricule" MaxLength="30" Required="true" RequiredError="Matricule : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.NomComplet" Label="Nom complet" MaxLength="200" Required="true" RequiredError="Nom complet : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <div><ChoixReference Label="Catégorie d'emplois" Elements="_categories" Obligatoire="true"
+                    Value="Element.CategorieEmploiId" ValueChanged="v => Element.CategorieEmploiId = v ?? Ulid.Empty" /></div>
+    <div><ChoixReference Label="Structure" Elements="_structures" Obligatoire="true"
+                    Value="Element.StructureId" ValueChanged="v => Element.StructureId = v ?? Ulid.Empty" /></div>
+    <div class="sm:col-span-2"><ChoixReference Label="Site d'affectation" Elements="_sites"
+                    Value="Element.SiteId" ValueChanged="v => Element.SiteId = v" /></div>
+</div>
+
+@code {
+    private List<ElementListe> _categories = new();
+    private List<ElementListe> _structures = new();
+    private List<ElementListe> _sites = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _categories = await ServiceCategorieEmploi.ListerPourSelectionAsync();
+        _structures = await ServiceStructure.ListerPourSelectionAsync();
+        _sites = await ServiceSite.ListerPourSelectionAsync();
+    }
+}

@@ -1,0 +1,21 @@
+@* Ligne « libellé ……… montant » d'une carte de situation. *@
+
+<div class="flex items-baseline justify-between gap-3 @(Fort ? "pt-1.5 border-t border-gray-100" : "")">
+    <dt class="@(Fort ? "font-semibold text-gray-800" : "text-gray-600")">@Libelle</dt>
+    <dd class="tabular-nums whitespace-nowrap @(Alerte ? "text-red-700 font-semibold" : Fort ? "font-semibold text-gray-900" : "text-gray-800")">
+        @(Signe && Valeur > 0 ? "+" : "")@Formats.Montant(Valeur)
+    </dd>
+</div>
+
+@code {
+    [Parameter] public string Libelle { get; set; } = "";
+    [Parameter] public decimal Valeur { get; set; }
+
+    /// <summary>Total : mis en évidence, séparé par un filet.</summary>
+    [Parameter] public bool Fort { get; set; }
+
+    /// <summary>Affiche le « + » des montants positifs (ajustements, reports).</summary>
+    [Parameter] public bool Signe { get; set; }
+
+    [Parameter] public bool Alerte { get; set; }
+}

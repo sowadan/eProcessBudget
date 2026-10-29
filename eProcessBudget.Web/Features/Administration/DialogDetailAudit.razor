@@ -1,0 +1,88 @@
+@inject IJournalAuditService Service
+
+@*
+    Détail d'une ligne du journal d'audit : contexte (auteur, date, adresse IP, corrélation,
+    navigateur) et valeurs avant / après côte à côte, champs modifiés mis en évidence.
+*@
+
+<MudDialog>
+    <DialogContent>
+        @if (_detail is not { } d)
+        {
+            <div class="flex justify-center py-10"><MudProgressCircular Indeterminate="true" Color="Color.Primary" /></div>
+        }
+        else
+        {
+            var l = d.Ligne;
+            <dl class="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm mb-5">
+                <div><dt class="text-xs text-gray-500">Date</dt><dd class="font-medium tabular-nums">@l.DateAction.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</dd></div>
+                <div><dt class="text-xs text-gray-500">Utilisateur</dt><dd class="font-medium">@(l.Matricule ?? "système")@(d.Utilisateur is null ? "" : $" — {d.Utilisateur}")</dd></div>
+                <div><dt class="text-xs text-gray-500">Adresse IP</dt><dd class="font-mono text-xs">@(l.AdresseIp ?? "—")</dd></div>
+                <div><dt class="text-xs text-gray-500">Module · action</dt><dd class="font-medium">@l.Module · @l.Action</dd></div>
+                <div><dt class="text-xs text-gray-500">Élément</dt><dd class="font-medium">@l.Entite <span class="font-mono text-xs text-gray-500">@l.EntiteId</span></dd></div>
+                <div>
+                    <dt class="text-xs text-gray-500">Résultat</dt>
+                    <dd><AppBadge Variante="@(l.EstSucces ? "success" : "danger")" Petit="true">@(l.EstSucces ? "Succès" : "Échec")</AppBadge></dd>
+                </div>
+                @if (d.CorrelationId is not null)
+                {
+                    <div class="sm:col-span-3"><dt class="text-xs text-gray-500">Corrélation (requête ou session)</dt><dd class="font-mono text-xs">@d.CorrelationId</dd></div>
+                }
+                @if (d.Commentaire is not null)
+                {
+                    <div class="sm:col-span-3"><dt class="text-xs text-gray-500">Commentaire</dt><dd>@d.Commentaire</dd></div>
+                }
+                @if (d.MessageErreur is not null)
+                {
+                    <div class="sm:col-span-3"><dt class="text-xs text-gray-500">Erreur</dt><dd class="text-red-700">@d.MessageErreur</dd></div>
+                }
+                @if (d.UserAgent is not null)
+                {
+                    <div class="sm:col-span-3"><dt class="text-xs text-gray-500">Navigateur</dt><dd class="text-xs text-gray-500 break-all">@d.UserAgent</dd></div>
+                }
+            </dl>
+
+            @if (d.Champs.Count == 0)
+            {
+                <p class="text-sm text-gray-500 italic">Aucune valeur enregistrée pour cette opération.</p>
+            }
+            else
+            {
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-sm font-semibold text-gray-800">Valeurs avant et après</h3>
+                    <MudSwitch T="bool" @bind-Value="_modifiesSeulement" Label="Champs modifiés seulement" Color="Color.Primary" Size="Size.Small" />
+                </div>
+                <div class="border border-gray-200 rounded-lg overflow-hidden">
+                    <table class="w-full text-sm table-fixed">
+                        <thead class="bg-gray-50 text-xs text-gray-500">
+                            <tr><th class="text-left px-3 py-2 w-1/4">Champ</th><th class="text-left px-3 py-2">Avant</th><th class="text-left px-3 py-2">Après</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var c in d.Champs.Where(c => !_modifiesSeulement || c.EstModifie))
+                            {
+                                <tr class="border-t border-gray-100 align-top @(c.EstModifie && c.Avant is not null && c.Apres is not null ? "bg-amber-50" : "")">
+                                    <td class="px-3 py-1.5 font-medium text-gray-700 break-words">@c.Champ</td>
+                                    <td class="px-3 py-1.5 break-words @(c.EstModifie && c.Avant is not null ? "text-red-700 line-through decoration-red-300" : "text-gray-600")">@(c.Avant ?? "—")</td>
+                                    <td class="px-3 py-1.5 break-words @(c.EstModifie && c.Apres is not null ? "text-emerald-700 font-medium" : "text-gray-600")">@(c.Apres ?? "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Close()">Fermer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter, EditorRequired] public Ulid Id { get; set; }
+
+    private DetailJournal? _detail;
+    private bool _modifiesSeulement;
+
+    protected override async Task OnInitializedAsync() => _detail = await Service.ObtenirAsync(Id);
+}

@@ -1,0 +1,60 @@
+@inject IImmobilisationService Service
+@inject IProjetService Projets
+@inject IReferentielService<Site> ServiceSite
+@inject IReferentielService<Structure> ServiceStructure
+
+@* Immobilisation ou équipement inventorié : site, compte d'immobilisation, projet d'acquisition, valeur et état. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <MudTextField @bind-Value="Saisie.Code" Label="Code inventaire" MaxLength="30" Required="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <div class="sm:col-span-2">
+                <MudTextField @bind-Value="Saisie.Designation" Label="Désignation" MaxLength="300" Required="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+            <ChoixReference Label="Site" Elements="_sites" Obligatoire="true" Value="Saisie.SiteId" ValueChanged="v => Saisie.SiteId = v" />
+            <ChoixReference Label="Service" Elements="_structures" Value="Saisie.StructureId" ValueChanged="v => Saisie.StructureId = v" />
+            <ChoixEnum TEnum="EtatImmobilisation" Label="État" Libelles="LibellesAxes.EtatImmobilisation" @bind-Value="Saisie.Etat" />
+            <div class="sm:col-span-2">
+                <ChoixReference Label="Compte d'immobilisation" Elements="_comptes" Obligatoire="true"
+                                Value="Saisie.CompteComptableId" ValueChanged="v => Saisie.CompteComptableId = v" />
+            </div>
+            <ChoixReference Label="Projet d'acquisition" Elements="_projets" Value="Saisie.ProjetId" ValueChanged="v => Saisie.ProjetId = v" />
+            <ChampDate Label="Date d'acquisition" Obligatoire="true" @bind-Value="Saisie.DateAcquisition" />
+            <MudNumericField T="decimal" @bind-Value="Saisie.ValeurAcquisition" Label="Valeur d'acquisition" Min="0" Format="N2" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public SaisieImmobilisation Saisie { get; set; } = new();
+
+    private List<ElementListe> _sites = new(), _structures = new(), _comptes = new(), _projets = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _sites = await ServiceSite.ListerPourSelectionAsync();
+        _structures = await ServiceStructure.ListerPourSelectionAsync();
+        _comptes = await Service.ListerComptesAsync();
+        _projets = await Projets.ListerPourSelectionAsync(AxesDepense.Investissement);
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.EnregistrerAsync(Saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

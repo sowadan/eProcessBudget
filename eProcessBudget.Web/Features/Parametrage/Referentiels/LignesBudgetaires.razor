@@ -1,0 +1,25 @@
+@page "/parametrage/lignes-budgetaires"
+
+<PageTitle>Paramétrage</PageTitle>
+
+@* Référentiel LigneBudgetaire : colonnes de la liste. Tout le reste (droits, filtres, saisie, Excel) vient de PageReferentiel. *@
+
+<PageReferentiel T="LigneBudgetaire" Formulaire="typeof(FormulaireLigneBudgetaire)"
+                 Description="Niveau de saisie des prévisions et de l'exécution. Comptes d'imputation : Nomenclature budgétaire.">
+    <EnTetes>
+        <MudTh>Code</MudTh>
+        <MudTh>Libellé</MudTh>
+        <MudTh>Sous-rubrique</MudTh>
+        <MudTh>Sens</MudTh>
+        <MudTh>Nature</MudTh>
+        <MudTh>Source</MudTh>
+    </EnTetes>
+    <Colonnes>
+        <MudTd DataLabel="Code"><span class="font-mono text-xs font-semibold text-gray-800">@context.Code</span></MudTd>
+        <MudTd DataLabel="Libellé"><span class="text-sm text-gray-700">@context.Libelle</span></MudTd>
+        <MudTd DataLabel="Sous-rubrique"><span class="text-sm text-gray-500">@context.SousRubrique.Code</span></MudTd>
+        <MudTd DataLabel="Sens"><span class="text-sm text-gray-500">@LibellesParametrage.De(LibellesParametrage.SensLigne, context.Sens)</span></MudTd>
+        <MudTd DataLabel="Nature"><span class="text-sm text-gray-500">@(context.NatureDepense?.Libelle ?? context.NatureRecette?.Libelle)</span></MudTd>
+        <MudTd DataLabel="Source"><span class="text-sm text-gray-500">@context.SourceFinancement.Code</span></MudTd>
+    </Colonnes>
+</PageReferentiel>

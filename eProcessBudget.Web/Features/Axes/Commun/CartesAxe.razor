@@ -1,0 +1,24 @@
+@*
+    Chiffres clés d'une situation (un axe, un projet) : dotation totale, engagé, payé, reste
+    à payer, avec les taux y compris reports.
+
+    <CartesAxe Montants="_totaux" />
+*@
+
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+    <AppStatCard Label="Dotation totale" Valeur="@Formats.Montant(Montants.DotationTotale)" Icone="collection"
+                 SousTitre="@($"Prévision ajustée {Formats.Montant(Montants.PrevisionAjustee)}")" />
+    <AppStatCard Label="Engagé (AE / AD)" Valeur="@Formats.Montant(Montants.AETotal)" Icone="clipboard-list"
+                 SousTitre="@($"{Formats.Taux(Montants.TauxEngagementYCReports)} y compris reports")" CouleurFond="#FEF3C7" CouleurIcone="#B45309" />
+    <AppStatCard Label="@LibellePaye" Valeur="@Formats.Montant(Montants.PaiementsTotal)" Icone="check-circle"
+                 SousTitre="@($"{Formats.Taux(Montants.TauxConsommationYCReports)} y compris reports")" CouleurFond="#DCFCE7" CouleurIcone="#15803D" />
+    <AppStatCard Label="Reste à payer" Valeur="@Formats.Montant(Montants.ResteAPayerYCReports)" Icone="clock"
+                 SousTitre="@($"Consommation des AD {Formats.Taux(Montants.TauxConsommationAD)}")" CouleurFond="#F3E8FF" CouleurIcone="#7E22CE" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MontantsDotation Montants { get; set; } = MontantsDotation.Zero;
+
+    /// <summary>« Versé » pour les appuis.</summary>
+    [Parameter] public string LibellePaye { get; set; } = "Payé";
+}

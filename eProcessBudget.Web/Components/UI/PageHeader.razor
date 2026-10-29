@@ -1,0 +1,54 @@
+@*
+    En-tête standard de page : fil d'Ariane, titre, description, actions.
+
+    Le <h1> est ici et nulle part ailleurs : Routes.razor y place le focus après chaque
+    navigation, ce qui annonce la nouvelle page aux lecteurs d'écran.
+
+    Les attributs data-guide sont les points d'ancrage du guide d'utilisation
+    (Features/Aide) : toutes les pages en bénéficient sans rien déclarer.
+
+    EXEMPLE
+    -------
+    <PageHeader Titre="Commandes" Description="Suivi des commandes en cours">
+        <BreadcrumbContent>
+            <a href="/">Accueil</a><span>/</span><span>Commandes</span>
+        </BreadcrumbContent>
+        <ActionsContent>
+            <AppButton Icone="plus" OnClick="Creer">Nouvelle commande</AppButton>
+        </ActionsContent>
+    </PageHeader>
+*@
+
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+    <div class="min-w-0" data-guide="page-entete">
+        @if (BreadcrumbContent is not null)
+        {
+            <nav class="flex items-center gap-1.5 text-sm text-gray-500 mb-1.5" aria-label="Fil d'Ariane">
+                @BreadcrumbContent
+            </nav>
+        }
+
+        <h1 class="text-xl font-bold text-gray-900">@Titre</h1>
+
+        @if (!string.IsNullOrEmpty(Description))
+        {
+            <p class="text-sm text-gray-500 mt-0.5">@Description</p>
+        }
+    </div>
+
+    @if (ActionsContent is not null)
+    {
+        <div class="flex items-center gap-2 flex-shrink-0" data-guide="page-actions">
+            @ActionsContent
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Titre { get; set; } = "";
+    [Parameter] public string Description { get; set; } = "";
+    [Parameter] public RenderFragment? BreadcrumbContent { get; set; }
+    [Parameter] public RenderFragment? ActionsContent { get; set; }
+}
+
+

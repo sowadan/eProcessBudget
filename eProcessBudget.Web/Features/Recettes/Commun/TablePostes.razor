@@ -1,0 +1,34 @@
+@* Postes d'un bilan : prévu, réalisé, taux de réalisation, et leur total. *@
+
+@if (Postes.Count == 0)
+{
+    <EtatVide Icone="collection" Titre="Aucun montant" />
+}
+else
+{
+    <MudSimpleTable Dense="true">
+        <thead><tr><th>Poste</th><th class="text-right">Prévu</th><th class="text-right">@LibelleRealise</th><th style="min-width:150px">Taux</th></tr></thead>
+        <tbody>
+            @foreach (var p in Postes)
+            {
+                <tr>
+                    <td>@p.Libelle</td>
+                    <td class="tabular-nums text-right">@Formats.Montant(p.Prevu)</td>
+                    <td class="tabular-nums text-right">@Formats.Montant(p.Realise)</td>
+                    <td><Barre Taux="p.Taux" /></td>
+                </tr>
+            }
+            <tr class="font-semibold bg-gray-50">
+                <td>Total</td>
+                <td class="tabular-nums text-right">@Formats.Montant(Postes.Sum(p => p.Prevu))</td>
+                <td class="tabular-nums text-right">@Formats.Montant(Postes.Sum(p => p.Realise))</td>
+                <td><Barre Taux="CalculsExecution.Taux(Postes.Sum(p => p.Realise), Postes.Sum(p => p.Prevu))" /></td>
+            </tr>
+        </tbody>
+    </MudSimpleTable>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<PosteBilan> Postes { get; set; } = [];
+    [Parameter] public string LibelleRealise { get; set; } = "Réalisé";
+}

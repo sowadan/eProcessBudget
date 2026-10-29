@@ -1,0 +1,24 @@
+@inherits FormulaireBase<SousRubrique>
+@inject IReferentielService<Rubrique> ServiceRubrique
+
+@* Formulaire de saisie : SousRubrique. Généré à l'identique pour tous les référentiels ; les règles sont dans CatalogueReferentiels. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div class="sm:col-span-2"><ChoixReference Label="Rubrique" Elements="_rubriques" Obligatoire="true"
+                    Value="Element.RubriqueId" ValueChanged="v => Element.RubriqueId = v ?? Ulid.Empty" /></div>
+    <MudTextField @bind-Value="Element.Code" Label="Code" MaxLength="20" Required="true" RequiredError="Code : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudNumericField T="int" @bind-Value="Element.Ordre" Label="Ordre d'affichage" Min="0"
+                     Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Libelle" Label="Libellé" MaxLength="250" Required="true" RequiredError="Libellé : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+</div>
+
+@code {
+    private List<ElementListe> _rubriques = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _rubriques = await ServiceRubrique.ListerPourSelectionAsync();
+    }
+}

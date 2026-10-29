@@ -1,0 +1,93 @@
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject NavigationManager Nav
+
+@*
+    Garde-fou de droits. DEUX usages, selon le paramètre Discret.
+
+    1. PROTÉGER UNE PAGE (Discret = false, défaut)
+       Affiche un écran « Accès refusé » explicite si l'utilisateur n'a pas le droit.
+
+       <AutoriseSi DroitsRequis="new[] { TypeDroit.BudgetConsultation }">
+           ... toute la page ...
+       </AutoriseSi>
+
+    2. MASQUER UN ÉLÉMENT (Discret = true)
+       N'affiche rien du tout : pour un bouton ou une colonne réservés.
+
+       <AutoriseSi DroitsRequis="new[] { TypeDroit.BudgetSaisie }" Discret="true">
+           <AppButton Icone="pencil">Modifier</AppButton>
+       </AutoriseSi>
+
+    IMPORTANT : ce composant protège l'AFFICHAGE. Toute action qui modifie des données
+    doit revérifier le droit côté service avant d'écrire. Voir docs/05-droits-acces.md.
+*@
+
+@if (_chargement)
+{
+    @if (!Discret)
+    {
+        <div class="flex items-center justify-center py-16">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+        </div>
+    }
+}
+else if (_autorise)
+{
+    @ChildContent
+}
+else if (!Discret)
+{
+    <div class="flex flex-col items-center justify-center py-20 text-center">
+        <div class="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+             style="background-color: color-mix(in srgb, var(--app-primaire) 12%, transparent);">
+            <MudIcon Icon="@Icons.Material.Filled.Block" Size="Size.Large"
+                     Style="color: var(--app-primaire);" />
+        </div>
+
+        <h3 class="text-lg font-bold text-gray-700">Accès refusé</h3>
+        <p class="text-sm text-gray-500 mt-1 max-w-md">
+            Vous n'avez pas les droits nécessaires pour accéder à cette section.
+            Contactez l'administrateur si vous pensez qu'il s'agit d'une erreur.
+        </p>
+
+        @if (DroitsRequis is { Length: > 0 })
+        {
+            <p class="text-xs text-gray-400 mt-3">
+                Droit requis : @string.Join(" ou ", DroitsRequis.Select(DroitHelper.Libelle))
+            </p>
+        }
+
+        <div class="mt-5">
+            <AppButton Variante="outline" OnClick="@(() => Nav.NavigateTo("/"))">
+                Retour à l'accueil
+            </AppButton>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Au moins UN de ces droits suffit. null ou vide = simple exigence d'un utilisateur connu et actif.</summary>
+    [Parameter] public TypeDroit[]? DroitsRequis { get; set; }
+
+    /// <summary>true : n'affiche rien en cas de refus, au lieu de l'écran « Accès refusé ».</summary>
+    [Parameter] public bool Discret { get; set; }
+
+    private bool _chargement = true;
+    private bool _autorise;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var userId = await UserContext.ObtenirUserIdAsync();
+
+        _autorise = userId != Ulid.Empty
+            && (DroitsRequis is null || DroitsRequis.Length == 0
+                || await Droits.ADroitAsync(userId, DroitsRequis));
+
+        _chargement = false;
+    }
+}
+
+

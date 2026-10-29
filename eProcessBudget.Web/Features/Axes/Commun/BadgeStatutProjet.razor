@@ -1,0 +1,16 @@
+@* Statut d'un projet ou d'un contrat (programmé, en cours, achevé, suspendu, annulé). *@
+
+<AppBadge Variante="@Variante" Petit="true">@LibellesAxes.StatutProjet[Statut]</AppBadge>
+
+@code {
+    [Parameter] public StatutProjet Statut { get; set; }
+
+    private string Variante => Statut switch
+    {
+        StatutProjet.EnCours => "info",
+        StatutProjet.Acheve => "success",
+        StatutProjet.Suspendu => "warning",
+        StatutProjet.Annule => "neutral",
+        _ => "primary"
+    };
+}

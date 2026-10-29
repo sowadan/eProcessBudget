@@ -1,0 +1,79 @@
+@inject INomenclatureService Nomenclature
+@inject IReferentielService<Tiers> ServiceTiers
+
+@*
+    Collectivités locales de la zone d'implantation d'un site (table ref.SiteTiers). Une
+    collectivité n'est rattachée qu'à un seul poste (réponse C.2.8) : celles d'un autre
+    poste sont affichées, non sélectionnables.
+*@
+
+<MudDialog>
+    <DialogContent>
+        @if (_chargement)
+        {
+            <div class="flex justify-center py-8"><MudProgressCircular Indeterminate="true" Color="Color.Primary" /></div>
+        }
+        else
+        {
+            @if (_erreur is not null)
+            {
+                <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+            }
+            @if (_candidats.Count == 0)
+            {
+                <p class="text-sm text-gray-500">
+                    Aucune entité bénéficiaire active : créez les collectivités dans « Tiers et partenaires ».
+                </p>
+            }
+            else
+            {
+                <p class="text-xs text-gray-500 mb-2">Entités bénéficiaires d'appuis (collectivités locales). Plusieurs collectivités par poste, un seul poste par collectivité.</p>
+                <div class="max-h-80 overflow-y-auto">
+                    @foreach (var tiers in _candidats)
+                    {
+                        var poste = _ailleurs.GetValueOrDefault(tiers.Id);
+                        <MudCheckBox T="bool" Value="@_selection.Contains(tiers.Id)" Dense="true" Color="Color.Primary" Disabled="@(poste is not null)"
+                                     ValueChanged="@(v => { if (v) _selection.Add(tiers.Id); else _selection.Remove(tiers.Id); })"
+                                     Label="@(poste is null ? tiers.Libelle : $"{tiers.Libelle} — rattachée à {poste}")" />
+                    }
+                </div>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" Desactive="_chargement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Ulid SiteId { get; set; }
+
+    private List<ElementListe> _candidats = new();
+    private readonly HashSet<Ulid> _selection = new();
+    private Dictionary<Ulid, string> _ailleurs = new();
+    private bool _chargement = true;
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _candidats = await ServiceTiers.ListerPourSelectionAsync(t => t.TypeTiers == TypeTiers.EntiteBeneficiaireAppuis);
+        _ailleurs = await Nomenclature.CollectivitesRattacheesAilleursAsync(SiteId);
+        foreach (var e in await Nomenclature.ObtenirCollectivitesSiteAsync(SiteId))
+        {
+            _selection.Add(e.Id);
+            if (_candidats.All(c => c.Id != e.Id)) _candidats.Add(e);   // collectivité devenue inactive
+        }
+        _chargement = false;
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Nomenclature.DefinirCollectivitesSiteAsync(SiteId, _selection);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

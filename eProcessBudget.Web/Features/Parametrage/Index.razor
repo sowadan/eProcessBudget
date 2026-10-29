@@ -1,0 +1,67 @@
+@page "/parametrage"
+
+<PageTitle>Paramétrage</PageTitle>
+
+@*
+    Vue d'ensemble du Paramétrage (cahier fonctionnel § 3.2) : paramètres généraux, puis
+    tous les référentiels du catalogue, groupés comme dans le cahier. Aucune saisie
+    budgétaire n'est possible sur un élément non paramétré.
+*@
+
+<AutoriseSi DroitsRequis="new[] { TypeDroit.ParametrageLire, TypeDroit.ParametrageGerer }">
+    <PageHeader Titre="Paramétrage" Description="Paramètres de l'organisme et référentiels sur lesquels s'appuient tous les autres modules.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <h2 class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3">Paramètres généraux</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+        @foreach (var (lien, icone, titre, texte) in Generaux)
+        {
+            <a href="@lien" class="block bg-white rounded-xl border border-gray-200 p-4 hover:border-gray-400 hover:shadow-sm transition">
+                <div class="flex items-center gap-3">
+                    <span class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                          style="background: color-mix(in srgb, var(--app-primaire) 12%, transparent); color: var(--app-primaire);">
+                        <span class="w-5 h-5"><AppIcon Nom="@icone" /></span>
+                    </span>
+                    <div class="min-w-0">
+                        <p class="text-sm font-semibold text-gray-800">@titre</p>
+                        <p class="text-xs text-gray-500 truncate">@texte</p>
+                    </div>
+                </div>
+            </a>
+        }
+    </div>
+
+    @foreach (var groupe in CatalogueReferentiels.Tous.Where(r => !Exclus.Contains(r.Cle) && r.Groupe != CatalogueReferentiels.GroupeProgrammes).GroupBy(r => r.Groupe))
+    {
+        <h2 class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3">@groupe.Key</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
+            @foreach (var r in groupe)
+            {
+                <a href="@r.Chemin"
+                   class="flex items-center justify-between bg-white rounded-lg border border-gray-200 px-4 py-3 hover:border-gray-400 transition">
+                    <span class="text-sm font-medium text-gray-700">@r.Titre</span>
+                    <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" Class="text-gray-400" />
+                </a>
+            }
+        </div>
+    }
+</AutoriseSi>
+
+@code {
+    private static readonly (string Lien, string Icone, string Titre, string Texte)[] Generaux =
+    [
+        ("/parametrage/organisme", "office-building", "Organisme", "Identité, logo, devise, session"),
+        ("/parametrage/exercices", "clock", "Exercices et cycles", "Exercices, périodes, programmation triennale"),
+        ("/parametrage/nomenclature", "collection", "Nomenclature budgétaire", "Axes, rubriques, lignes, comptes"),
+        ("/parametrage/seuils", "exclamation", "Seuils d'alerte", "Paliers de consommation"),
+        ("/parametrage/devises", "chart-bar", "Devises et taux", "Devises et taux de change"),
+        ("/parametrage/listes-valeurs", "clipboard-list", "Listes de valeurs", "Types, catégories, périodicités"),
+        ("/parametrage/import", "download", "Import Excel", "Reprise de l'existant"),
+    ];
+
+    /// <summary>Référentiels déjà présents dans les paramètres généraux.</summary>
+    private static readonly HashSet<string> Exclus = ["devises", "listes-valeurs"];
+}

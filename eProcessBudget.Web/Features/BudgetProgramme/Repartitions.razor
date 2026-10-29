@@ -1,0 +1,211 @@
+@page "/budget-programme/repartitions"
+@inject IRepartitionService Service
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Répartitions — Budget-programme</PageTitle>
+
+@*
+    Répartitions d'un exercice (§ 3.2.4 et 3.3.6) :
+      - clés de répartition de chaque ligne de dépense entre activités (total = 100 %) ;
+      - répartition du temps de chaque agent entre actions et activités (au plus 100 %) ;
+      - ventilation des charges de personnel et communes selon ce temps.
+*@
+
+<AutoriseSi DroitsRequis="CatalogueReferentiels.LectureBudgetProgramme">
+    <PageHeader Titre="Répartitions" Description="Clés de répartition des lignes, temps des agents et ventilation des charges.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span>
+            <a href="/budget-programme" class="hover:underline">Budget-programme</a>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-6">
+        <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+    </AppCard>
+
+    @if (_exercice is not null)
+    {
+        <MudTabs Elevation="0" Rounded="true" TabPanelsClass="pt-4">
+            <!-- ═══ Clés ════════════════════════════════════════════════════════ -->
+            <MudTabPanel Text="Clés de répartition">
+                <AppCard PaddingCorps="false">
+                    <TitreContent>
+                        <MudTextField T="string" @bind-Value="_rechercheLignes" @bind-Value:after="() => ChargerLignesAsync(1)" Placeholder="Code ou libellé de ligne…"
+                                      DebounceInterval="300" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" />
+                    </TitreContent>
+                    <ChildContent>
+                        <MudSimpleTable Dense="true" Hover="true">
+                            <thead><tr><th>Ligne de dépense</th><th class="text-right">Activités</th><th class="text-right">Total</th><th></th></tr></thead>
+                            <tbody>
+                                @foreach (var l in _lignes)
+                                {
+                                    <tr>
+                                        <td><span class="font-mono text-xs font-semibold">@l.Code</span> — @l.Libelle</td>
+                                        <td class="tabular-nums text-right">@l.NbActivites</td>
+                                        <td class="text-right">
+                                            <AppBadge Variante="@(l.EstComplete ? "success" : l.NbActivites == 0 ? "neutral" : "warning")" Petit="true">@Formats.Pourcentage(l.Total)</AppBadge>
+                                        </td>
+                                        <td class="text-right"><AppButton Variante="outline" Taille="sm" OnClick="() => ClesAsync(l)">@(_peutSaisir ? "Répartir" : "Voir")</AppButton></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </ChildContent>
+                    <PiedContent>
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs text-gray-500">@_totalLignes ligne(s) de dépense active(s)</p>
+                            @if (_totalLignes > 20)
+                            {
+                                <MudPagination Count="@((int)Math.Ceiling(_totalLignes / 20d))" Selected="_pageLignes" SelectedChanged="ChargerLignesAsync" Size="Size.Small" Color="Color.Primary" />
+                            }
+                        </div>
+                    </PiedContent>
+                </AppCard>
+            </MudTabPanel>
+
+            <!-- ═══ Temps ═══════════════════════════════════════════════════════ -->
+            <MudTabPanel Text="Temps des agents">
+                <AppCard PaddingCorps="false">
+                    <TitreContent>
+                        <MudTextField T="string" @bind-Value="_rechercheAgents" @bind-Value:after="() => ChargerAgentsAsync(1)" Placeholder="Matricule ou nom…"
+                                      DebounceInterval="300" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" />
+                    </TitreContent>
+                    <ChildContent>
+                        <MudSimpleTable Dense="true" Hover="true">
+                            <thead><tr><th>Agent</th><th>Structure</th><th class="text-right">Temps réparti</th><th></th></tr></thead>
+                            <tbody>
+                                @foreach (var a in _agents)
+                                {
+                                    <tr>
+                                        <td><span class="font-mono text-xs">@a.Matricule</span> — @a.Nom</td>
+                                        <td class="text-xs text-gray-500">@a.Structure</td>
+                                        <td class="text-right"><AppBadge Variante="@(a.Total == 100 ? "success" : a.Total == 0 ? "neutral" : "warning")" Petit="true">@Formats.Pourcentage(a.Total)</AppBadge></td>
+                                        <td class="text-right"><AppButton Variante="outline" Taille="sm" OnClick="() => TempsAsync(a)">@(_peutSaisir ? "Répartir" : "Voir")</AppButton></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </ChildContent>
+                    <PiedContent>
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs text-gray-500">@_totalAgents agent(s) actif(s)</p>
+                            @if (_totalAgents > 20)
+                            {
+                                <MudPagination Count="@((int)Math.Ceiling(_totalAgents / 20d))" Selected="_pageAgents" SelectedChanged="ChargerAgentsAsync" Size="Size.Small" Color="Color.Primary" />
+                            }
+                        </div>
+                    </PiedContent>
+                </AppCard>
+            </MudTabPanel>
+
+            <!-- ═══ Ventilation ═════════════════════════════════════════════════ -->
+            <MudTabPanel Text="Ventilation des charges">
+                <AppCard ClasseSup="mb-4">
+                    <div class="flex flex-col sm:flex-row gap-3 sm:items-end">
+                        <MudNumericField T="decimal" @bind-Value="_chargesPersonnel" Label="Charges de personnel" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        <MudNumericField T="decimal" @bind-Value="_chargesCommunes" Label="Charges communes" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        <AppButton OnClick="VentilerAsync">Ventiler</AppButton>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">Chaque action reçoit une part proportionnelle au temps que les agents lui consacrent (activités comprises).</p>
+                </AppCard>
+                @if (_ventilation is not null)
+                {
+                    <AppCard PaddingCorps="false">
+                        @if (_ventilation.Count == 0)
+                        {
+                            <EtatVide Icone="users" Titre="Aucun temps réparti" Message="Saisissez d'abord la répartition du temps des agents." />
+                        }
+                        else
+                        {
+                            <MudSimpleTable Dense="true" Hover="true">
+                                <thead><tr><th>Programme · action</th><th class="text-right">Part du temps</th><th class="text-right">Personnel</th><th class="text-right">Communes</th><th class="text-right">Total</th></tr></thead>
+                                <tbody>
+                                    @foreach (var v in _ventilation)
+                                    {
+                                        <tr>
+                                            <td><span class="font-mono text-xs">@v.Programme · @v.Action</span> — @v.Libelle</td>
+                                            <td class="tabular-nums text-right">@Formats.Pourcentage(v.PartTemps)</td>
+                                            <td class="tabular-nums text-right">@Formats.Montant(v.Personnel)</td>
+                                            <td class="tabular-nums text-right">@Formats.Montant(v.Communes)</td>
+                                            <td class="tabular-nums text-right font-semibold">@Formats.Montant(v.Total)</td>
+                                        </tr>
+                                    }
+                                    <tr class="font-semibold bg-gray-50">
+                                        <td>Total</td><td></td>
+                                        <td class="tabular-nums text-right">@Formats.Montant(_ventilation.Sum(v => v.Personnel))</td>
+                                        <td class="tabular-nums text-right">@Formats.Montant(_ventilation.Sum(v => v.Communes))</td>
+                                        <td class="tabular-nums text-right">@Formats.Montant(_ventilation.Sum(v => v.Total))</td>
+                                    </tr>
+                                </tbody>
+                            </MudSimpleTable>
+                        }
+                    </AppCard>
+                }
+            </MudTabPanel>
+        </MudTabs>
+    }
+</AutoriseSi>
+
+@code {
+    private LigneExercice? _exercice;
+    private bool _peutSaisir;
+    private List<EtatClesLigne> _lignes = new();
+    private int _totalLignes, _pageLignes = 1;
+    private string? _rechercheLignes;
+    private List<EtatTempsAgent> _agents = new();
+    private int _totalAgents, _pageAgents = 1;
+    private string? _rechercheAgents;
+    private decimal _chargesPersonnel, _chargesCommunes;
+    private List<LigneVentilation>? _ventilation;
+
+    protected override async Task OnInitializedAsync()
+        => _peutSaisir = await Droits.ADroitAsync(await UserContext.ObtenirUserIdAsync(), TypeDroit.ProgrammationSaisir);
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        _ventilation = null;
+        await ChargerLignesAsync(1);
+        await ChargerAgentsAsync(1);
+    }
+
+    private async Task ChargerLignesAsync(int page)
+    {
+        _pageLignes = page;
+        if (_exercice is not null) (_lignes, _totalLignes) = await Service.ListerLignesAsync(_exercice.Id, _rechercheLignes, page);
+    }
+
+    private async Task ChargerAgentsAsync(int page)
+    {
+        _pageAgents = page;
+        if (_exercice is not null) (_agents, _totalAgents) = await Service.ListerAgentsAsync(_exercice.Id, _rechercheAgents, page);
+    }
+
+    private async Task ClesAsync(EtatClesLigne l)
+    {
+        var parametres = new DialogParameters<DialogCles>
+        {
+            { x => x.ExerciceId, _exercice!.Id }, { x => x.LigneId, l.LigneId }, { x => x.PeutSaisir, _peutSaisir }
+        };
+        var dialog = await DialogService.ShowAsync<DialogCles>($"Clés de répartition : {l.Code}", parametres, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) { Snackbar.Add("Clés enregistrées.", Severity.Success); await ChargerLignesAsync(_pageLignes); }
+    }
+
+    private async Task TempsAsync(EtatTempsAgent a)
+    {
+        var parametres = new DialogParameters<DialogTemps>
+        {
+            { x => x.ExerciceId, _exercice!.Id }, { x => x.AgentId, a.AgentId }, { x => x.PeutSaisir, _peutSaisir }
+        };
+        var dialog = await DialogService.ShowAsync<DialogTemps>($"Temps de {a.Nom}", parametres, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) { Snackbar.Add("Répartition enregistrée.", Severity.Success); await ChargerAgentsAsync(_pageAgents); }
+    }
+
+    private async Task VentilerAsync()
+        => _ventilation = await Service.VentilerAsync(_exercice!.Id, _chargesPersonnel, _chargesCommunes);
+}

@@ -1,0 +1,66 @@
+@*
+    Situation d'un axe regroupée (par site, service, activité, nature...) : une ligne par
+    regroupement et une ligne de total. Les taux sont ceux du cycle commun, y compris reports.
+
+    <TableauRegroupement Lignes="_lignes" LibelleColonne="Site" />
+*@
+
+@if (Lignes.Count == 0)
+{
+    <EtatVide Icone="chart-bar" Titre="Aucune dotation" Message="Aucune dotation de l'axe sur cet exercice." />
+}
+else
+{
+    var total = MontantsDotation.Somme(Lignes.Select(l => l.Montants));
+    <MudSimpleTable Dense="true" Hover="true">
+        <thead>
+            <tr>
+                <th>@LibelleColonne</th>
+                <th class="text-right">Dotation totale</th><th class="text-right">Engagé</th><th class="text-right">@LibellePaye</th>
+                <th class="text-right">Taux d'engagement</th><th class="text-right">Taux de consommation</th>
+                <th class="text-right">@(AvecSolde ? "Solde (prévu − versé)" : "Reste à payer")</th>
+                @if (AvecPart) { <th class="text-right">Part</th> }
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var l in Lignes)
+            {
+                <tr>
+                    <td class="@(l.Id is null ? "italic text-gray-500" : "")">
+                        @l.Libelle
+                        <span class="text-xs text-gray-400">· @l.NbDotations dotation(s)</span>
+                    </td>
+                    <td class="tabular-nums text-right">@Formats.Montant(l.Montants.DotationTotale)</td>
+                    <td class="tabular-nums text-right">@Formats.Montant(l.Montants.AETotal)</td>
+                    <td class="tabular-nums text-right">@Formats.Montant(l.Montants.PaiementsTotal)</td>
+                    <td class="tabular-nums text-right">@Formats.Taux(l.Montants.TauxEngagementYCReports)</td>
+                    <td class="tabular-nums text-right">@Formats.Taux(l.Montants.TauxConsommationYCReports)</td>
+                    <td class="tabular-nums text-right">@Formats.Montant(AvecSolde ? l.Solde : l.Montants.ResteAPayerYCReports)</td>
+                    @if (AvecPart) { <td class="tabular-nums text-right">@Formats.Taux(CalculsExecution.Taux(l.Montants.DotationTotale, total.DotationTotale))</td> }
+                </tr>
+            }
+            <tr class="font-semibold bg-gray-50">
+                <td>Total</td>
+                <td class="tabular-nums text-right">@Formats.Montant(total.DotationTotale)</td>
+                <td class="tabular-nums text-right">@Formats.Montant(total.AETotal)</td>
+                <td class="tabular-nums text-right">@Formats.Montant(total.PaiementsTotal)</td>
+                <td class="tabular-nums text-right">@Formats.Taux(total.TauxEngagementYCReports)</td>
+                <td class="tabular-nums text-right">@Formats.Taux(total.TauxConsommationYCReports)</td>
+                <td class="tabular-nums text-right">@Formats.Montant(AvecSolde ? CalculsAxes.SoldeAppui(total.DotationTotale, total.PaiementsTotal) : total.ResteAPayerYCReports)</td>
+                @if (AvecPart) { <td class="tabular-nums text-right">100,00 %</td> }
+            </tr>
+        </tbody>
+    </MudSimpleTable>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<LigneRegroupement> Lignes { get; set; } = [];
+    [Parameter] public string LibelleColonne { get; set; } = "";
+    [Parameter] public string LibellePaye { get; set; } = "Payé";
+
+    /// <summary>Solde des appuis (prévu − versé) au lieu du reste à payer.</summary>
+    [Parameter] public bool AvecSolde { get; set; }
+
+    /// <summary>Part de chaque regroupement dans la dotation totale de l'axe.</summary>
+    [Parameter] public bool AvecPart { get; set; } = true;
+}

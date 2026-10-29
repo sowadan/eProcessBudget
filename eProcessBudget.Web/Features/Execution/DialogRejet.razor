@@ -1,0 +1,48 @@
+@inject IEngagementService Service
+@inject IReferentielService<ListeValeur> ServiceListe
+
+@* Rejet ou pénalité d'exécution (C.2.6) : réduit le reste à payer et l'encours à reporter. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <ChoixReference Label="Type" Elements="_types" Obligatoire="true" Value="_saisie.TypePenaliteId" ValueChanged="v => _saisie.TypePenaliteId = v" />
+            <MudNumericField T="decimal" @bind-Value="_saisie.Montant" Label="Montant" Min="0" Format="N2" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudDatePicker Date="@(_saisie.Date?.ToDateTime(TimeOnly.MinValue))" DateChanged="d => _saisie.Date = d is { } v ? DateOnly.FromDateTime(v) : null"
+                           Label="Date du constat" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+        <MudTextField @bind-Value="_saisie.Motif" Label="Motif" Lines="2" MaxLength="500" Counter="500" Class="mt-4" Variant="Variant.Outlined" Margin="Margin.Dense" />
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Ulid EngagementId { get; set; }
+
+    private SaisieRejet _saisie = new();
+    private List<ElementListe> _types = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _saisie = new SaisieRejet { EngagementId = EngagementId, Date = DateOnly.FromDateTime(DateTime.Today) };
+        _types = await ServiceListe.ListerPourSelectionAsync(l => l.Categorie == CategoriesListeValeur.TypePenalite);
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.AjouterRejetAsync(_saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

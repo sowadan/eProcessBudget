@@ -1,0 +1,124 @@
+@inject IProfilService Profils
+
+@*
+    Attribution des droits à un profil.
+
+    Les droits sont présentés par groupe (Administration, Métier), avec une
+    case « tout le groupe » : sur un catalogue de plusieurs dizaines de droits, cocher
+    un par un devient vite pénible.
+*@
+
+<MudDialog>
+    <DialogContent>
+        @if (_chargement)
+        {
+            <div class="flex justify-center py-10">
+                <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            </div>
+        }
+        else
+        {
+            @if (!string.IsNullOrEmpty(_erreur))
+            {
+                <div class="mb-4">
+                    <AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert>
+                </div>
+            }
+
+            <p class="text-sm text-gray-500 mb-4">
+                @_selection.Count droit(s) sélectionné(s) sur @_tousLesDroits.Count.
+            </p>
+
+            <div class="space-y-5 max-h-[55vh] overflow-y-auto pr-1">
+                @foreach (var groupe in _tousLesDroits.GroupBy(DroitHelper.Groupe))
+                {
+                    var droitsGroupe = groupe.ToList();
+                    var tousCoches = droitsGroupe.All(_selection.Contains);
+
+                    <div>
+                        <div class="flex items-center justify-between mb-2 pb-2 border-b border-gray-100">
+                            <p class="text-xs font-bold uppercase tracking-wider text-gray-500">@groupe.Key</p>
+                            <button type="button" @onclick="() => BasculerGroupe(droitsGroupe, !tousCoches)"
+                                    class="text-xs font-medium hover:underline" style="color: var(--app-primaire);">
+                                @(tousCoches ? "Tout décocher" : "Tout cocher")
+                            </button>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                            @foreach (var droit in droitsGroupe)
+                            {
+                                <MudCheckBox T="bool"
+                                             Value="@_selection.Contains(droit)"
+                                             ValueChanged="@(v => Basculer(droit, v))"
+                                             Label="@DroitHelper.Libelle(droit)"
+                                             Color="Color.Primary" Dense="true" />
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="Annuler">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">
+            Enregistrer les droits
+        </AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Profil Profil { get; set; } = new();
+
+    private readonly HashSet<TypeDroit> _selection = new();
+    private List<TypeDroit> _tousLesDroits = new();
+
+    private bool _chargement = true;
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _tousLesDroits = DroitHelper.Tous().ToList();
+
+        foreach (var droit in await Profils.ObtenirDroitsAsync(Profil.Id))
+            _selection.Add(droit);
+
+        _chargement = false;
+    }
+
+    private void Basculer(TypeDroit droit, bool coche)
+    {
+        if (coche) _selection.Add(droit);
+        else       _selection.Remove(droit);
+    }
+
+    private void BasculerGroupe(IEnumerable<TypeDroit> droits, bool coche)
+    {
+        foreach (var droit in droits) Basculer(droit, coche);
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        _erreur = null;
+
+        var (ok, erreur) = await Profils.DefinirDroitsAsync(Profil.Id, _selection);
+
+        if (!ok)
+        {
+            _erreur = erreur;
+            _enregistrement = false;
+            return;
+        }
+
+        _enregistrement = false;
+        Dialog.Close(DialogResult.Ok(true));
+    }
+
+    private void Annuler() => Dialog.Cancel();
+}
+
+

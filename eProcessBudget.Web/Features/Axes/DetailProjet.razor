@@ -1,0 +1,330 @@
+@page "/axes/projets/{Id}"
+@inject IProjetService Service
+@inject IContratService Contrats
+@inject IAvancementService Avancements
+@inject IImmobilisationService Immobilisations
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Projet — Axes de dépenses</PageTitle>
+
+@*
+    Fiche d'un projet (opération de travaux, projet d'investissement, appui) : son
+    identité, sa situation budgétaire sur l'exercice (composant CarteSituation du cycle
+    commun), ses dotations, engagements, paiements, contrats et, selon l'axe, son
+    avancement physique ou ses immobilisations.
+*@
+
+<AutoriseSi DroitsRequis="AxesDepense.LectureUnAxe">
+    @if (_fiche is null)
+    {
+        @if (_charge)
+        {
+            <AppCard><EtatVide Icone="clipboard-list" Titre="Projet introuvable" Message="Il a pu être supprimé, ou relève d'un axe que vous ne consultez pas." /></AppCard>
+        }
+    }
+    else
+    {
+        var p = _fiche;
+        <PageHeader Titre="@($"{p.Code} — {p.Intitule}")" Description="@($"{p.Axe.Libelle}{(p.EstPluriannuel ? " · pluriannuel" : "")}")">
+            <BreadcrumbContent>
+                <a href="/" class="hover:underline">Accueil</a><span>/</span>
+                <a href="@RoutesAxes.Projets(p.Axe)" class="hover:underline">@p.Axe.Libelle</a>
+            </BreadcrumbContent>
+            <ActionsContent>
+                <BadgeStatutProjet Statut="p.Statut" />
+                @if (_droits.Contains(TypeDroit.DotationSaisir) && _exercice is { Statut: not StatutExercice.Cloture } && p.Statut != StatutProjet.Annule)
+                {
+                    <AppButton Variante="outline" Icone="plus" OnClick="NouvelleDotationAsync">Dotation</AppButton>
+                }
+                @if (_peutSaisir)
+                {
+                    <AppButton Icone="pencil" OnClick="ModifierAsync">Modifier</AppButton>
+                }
+            </ActionsContent>
+        </PageHeader>
+
+        <AppCard ClasseSup="mb-4">
+            <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm">
+                @if (p.Axe == AxesDepense.Entretien)
+                {
+                    <Info Libelle="Type de travaux" Valeur="@p.TypeTravaux" />
+                    <Info Libelle="Type de voie" Valeur="@p.TypeVoie" />
+                    <Info Libelle="Maître d'ouvrage" Valeur="@p.MaitreOuvrage" />
+                    <Info Libelle="Localisation" Valeur="@p.Localisation" />
+                    <Info Libelle="Kilométrage prévu" Valeur="@Formats.Nombre(p.KmPrevus)" />
+                    <Info Libelle="Kilométrage entretenu (cumul)" Valeur="@($"{Formats.Nombre(p.KmRealises)} · {Formats.Taux(p.TauxKm)}")" />
+                }
+                @if (p.Axe == AxesDepense.Appuis)
+                {
+                    <Info Libelle="Entité bénéficiaire" Valeur="@p.Beneficiaire" />
+                    <Info Libelle="Entité de rattachement" Valeur="@p.BeneficiaireParent" />
+                }
+                <Info Libelle="Source de financement" Valeur="@p.Source" />
+                <Info Libelle="Site" Valeur="@p.Site" />
+                <Info Libelle="Service" Valeur="@p.Structure" />
+                <Info Libelle="Période" Valeur="@($"{p.DateDebut?.ToString("dd/MM/yyyy") ?? "…"} – {p.DateFin?.ToString("dd/MM/yyyy") ?? "…"}")" />
+            </dl>
+            @if (!string.IsNullOrWhiteSpace(p.Description))
+            {
+                <p class="text-sm text-gray-600 mt-4 whitespace-pre-line">@p.Description</p>
+            }
+        </AppCard>
+
+        <AppCard ClasseSup="mb-4">
+            <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+                <p class="text-xs text-gray-500">Situation des dotations du projet sur l'exercice ; seules les pièces validées comptent.</p>
+            </div>
+        </AppCard>
+
+        @if (_execution is not null)
+        {
+            <CarteSituation Montants="_execution.Totaux" />
+        }
+
+        <MudTabs Elevation="0" Rounded="true" TabPanelsClass="pt-4" Class="mt-4">
+            <MudTabPanel Text="@($"Dotations ({_execution?.Dotations.Count ?? 0})")">
+                <AppCard PaddingCorps="false">
+                    @if (_execution is not { Dotations.Count: > 0 })
+                    {
+                        <EtatVide Icone="collection" Titre="Aucune dotation" Message="Le budget du projet se porte par des dotations (Exécution budgétaire › Dotations)." />
+                    }
+                    else
+                    {
+                        <TableDotations Lignes="_execution.Dotations" />
+                    }
+                </AppCard>
+            </MudTabPanel>
+
+            <MudTabPanel Text="@($"Engagements ({_execution?.Engagements.Count ?? 0})")">
+                <AppCard PaddingCorps="false">
+                    @if (_execution is not { Engagements.Count: > 0 })
+                    {
+                        <EtatVide Icone="clipboard-list" Titre="Aucun engagement sur l'exercice" />
+                    }
+                    else
+                    {
+                        <TableEngagements Lignes="_execution.Engagements" AvecLigne="true" />
+                    }
+                </AppCard>
+            </MudTabPanel>
+
+            <MudTabPanel Text="@($"{(p.Axe == AxesDepense.Appuis ? "Versements" : "Paiements")} ({_execution?.Paiements.Count ?? 0})")">
+                <AppCard PaddingCorps="false">
+                    @if (_execution is not { Paiements.Count: > 0 })
+                    {
+                        <EtatVide Icone="cash" Titre="Aucun paiement sur l'exercice" />
+                    }
+                    else
+                    {
+                        <TablePaiements Lignes="_execution.Paiements" />
+                    }
+                </AppCard>
+            </MudTabPanel>
+
+            <MudTabPanel Text="@($"Contrats ({_contrats.Count})")">
+                <AppCard PaddingCorps="false">
+                    <ActionsContent>
+                        @if (_peutSaisir && p.Statut != StatutProjet.Annule)
+                        {
+                            <AppButton Taille="sm" Icone="plus" OnClick="() => EditerContratAsync(null)">Nouveau contrat</AppButton>
+                        }
+                    </ActionsContent>
+                    <ChildContent>
+                        @if (_contrats.Count == 0)
+                        {
+                            <EtatVide Icone="document-text" Titre="Aucun contrat" />
+                        }
+                        else
+                        {
+                            <TableContrats Lignes="_contrats" AvecKm="@(p.Axe == AxesDepense.Entretien)" PeutSaisir="_peutSaisir"
+                                           OnModifier="EditerContratAsync" OnSupprimer="SupprimerContratAsync" />
+                        }
+                    </ChildContent>
+                </AppCard>
+            </MudTabPanel>
+
+            @if (p.Axe == AxesDepense.Entretien)
+            {
+                <MudTabPanel Text="@($"Avancement physique ({_avancements.Count})")">
+                    <AppCard PaddingCorps="false">
+                        <ActionsContent>
+                            @if (_peutSaisir && _exercice is { Statut: StatutExercice.Ouvert })
+                            {
+                                <AppButton Taille="sm" Icone="plus" OnClick="() => EditerAvancementAsync(null)">Saisir un avancement</AppButton>
+                            }
+                        </ActionsContent>
+                        <ChildContent>
+                            @if (_avancements.Count == 0)
+                            {
+                                <EtatVide Icone="chart-bar" Titre="Aucun avancement sur l'exercice" />
+                            }
+                            else
+                            {
+                                <TableAvancements Lignes="_avancements" PeutSaisir="@(_peutSaisir && _exercice is { Statut: StatutExercice.Ouvert })"
+                                                  OnModifier="EditerAvancementAsync" OnSupprimer="SupprimerAvancementAsync" />
+                            }
+                        </ChildContent>
+                    </AppCard>
+                </MudTabPanel>
+            }
+
+            @if (p.Axe == AxesDepense.Investissement)
+            {
+                <MudTabPanel Text="@($"Immobilisations ({_immobilisations.Count})")">
+                    <AppCard PaddingCorps="false">
+                        @if (_immobilisations.Count == 0)
+                        {
+                            <EtatVide Icone="office-building" Titre="Aucune immobilisation acquise par ce projet" Message="L'inventaire se tient dans Investissements › Inventaire." />
+                        }
+                        else
+                        {
+                            <TableImmobilisations Lignes="_immobilisations" />
+                        }
+                    </AppCard>
+                </MudTabPanel>
+            }
+        </MudTabs>
+    }
+</AutoriseSi>
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    public static string Lien(Ulid id) => $"/axes/projets/{id}";
+
+    private IReadOnlySet<TypeDroit> _droits = new HashSet<TypeDroit>();
+    private Ulid _id;
+    private FicheProjet? _fiche;
+    private LigneExercice? _exercice;
+    private ExecutionProjet? _execution;
+    private List<LigneContrat> _contrats = new();
+    private List<LigneAvancement> _avancements = new();
+    private List<LigneImmobilisation> _immobilisations = new();
+    private bool _charge, _peutSaisir;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _droits = await Droits.ObtenirDroitsAsync(await UserContext.ObtenirUserIdAsync());
+        _fiche = Ulid.TryParse(Id, out _id) ? await Service.ObtenirAsync(_id) : null;
+        _charge = true;
+        if (_fiche is null) return;
+        _peutSaisir = _droits.Contains(_fiche.Axe.DroitSaisir);
+        await ChargerContratsAsync();
+        if (_fiche.Axe == AxesDepense.Investissement)
+            (_immobilisations, _, _) = await Immobilisations.ListerAsync(new FiltreImmobilisations { ProjetId = _id }, 1, 200);
+        if (_exercice is not null) await ChargerExecutionAsync();
+    }
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        await ChargerExecutionAsync();
+    }
+
+    private async Task ChargerExecutionAsync()
+    {
+        if (_exercice is null || _fiche is null) return;
+        _execution = await Service.ObtenirExecutionAsync(_id, _exercice.Id);
+        if (_fiche.Axe == AxesDepense.Entretien)
+            (_avancements, _) = await Avancements.ListerAsync(new FiltreAvancements { ExerciceId = _exercice.Id, ProjetId = _id }, 1, 200);
+    }
+
+    private async Task ChargerContratsAsync()
+        => (_contrats, _) = await Contrats.ListerAsync(_fiche!.Axe, new FiltreContrats { ProjetId = _id }, 1, 200);
+
+    private async Task RechargerFicheAsync()
+    {
+        _fiche = await Service.ObtenirAsync(_id);
+        if (_fiche is not null) await ChargerContratsAsync();
+    }
+
+    private async Task ModifierAsync()
+    {
+        if (await Service.ObtenirSaisieAsync(_id) is not { } saisie) return;
+        var parametres = new DialogParameters<DialogProjet> { { x => x.Axe, _fiche!.Axe }, { x => x.Saisie, saisie } };
+        var dialog = await DialogService.ShowAsync<DialogProjet>($"Modifier {_fiche.Code}", parametres, new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Projet enregistré.", Severity.Success);
+            await RechargerFicheAsync();
+        }
+    }
+
+    private async Task NouvelleDotationAsync()
+    {
+        var parametres = new DialogParameters<DialogDotation>
+        {
+            { x => x.Saisie, new SaisieDotation { ExerciceId = _exercice!.Id, ProjetId = _id } },
+            { x => x.EnPreparation, _exercice.Statut == StatutExercice.EnPreparation }
+        };
+        var dialog = await DialogService.ShowAsync<DialogDotation>("Nouvelle dotation du projet", parametres, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Dotation enregistrée.", Severity.Success);
+            await ChargerExecutionAsync();
+        }
+    }
+
+    private async Task EditerContratAsync(LigneContrat? c)
+    {
+        var saisie = c is null ? new SaisieContrat { ProjetId = _id } : await Contrats.ObtenirSaisieAsync(c.Id);
+        if (saisie is null) return;
+        var parametres = new DialogParameters<DialogContrat> { { x => x.Axe, _fiche!.Axe }, { x => x.Saisie, saisie }, { x => x.ProjetFixe, true } };
+        var dialog = await DialogService.ShowAsync<DialogContrat>(c is null ? "Nouveau contrat" : $"Modifier le contrat {c.Numero}", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Contrat enregistré.", Severity.Success);
+            await ChargerContratsAsync();
+        }
+    }
+
+    private async Task SupprimerContratAsync(LigneContrat c)
+    {
+        if (!await ConfirmerAsync("Supprimer le contrat", $"Le contrat {c.Numero} est supprimé (suppression logique).")) return;
+        var (ok, erreur) = await Contrats.SupprimerAsync(c.Id);
+        Snackbar.Add(ok ? "Contrat supprimé." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerContratsAsync();
+    }
+
+    private async Task EditerAvancementAsync(LigneAvancement? a)
+    {
+        var saisie = a is null ? new SaisieAvancement { ProjetId = _id } : await Avancements.ObtenirSaisieAsync(a.Id);
+        if (saisie is null) return;
+        var parametres = new DialogParameters<DialogAvancement> { { x => x.Saisie, saisie }, { x => x.ExerciceId, _exercice!.Id }, { x => x.ProjetFixe, true } };
+        var dialog = await DialogService.ShowAsync<DialogAvancement>(a is null ? "Saisir un avancement" : "Modifier l'avancement", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Avancement enregistré.", Severity.Success);
+            await RechargerFicheAsync();
+            await ChargerExecutionAsync();
+        }
+    }
+
+    private async Task SupprimerAvancementAsync(LigneAvancement a)
+    {
+        if (!await ConfirmerAsync("Supprimer l'avancement", $"L'avancement de {a.Mois.ToString("MMMM yyyy", Formats.Francais)} est supprimé.")) return;
+        var (ok, erreur) = await Avancements.SupprimerAsync(a.Id);
+        Snackbar.Add(ok ? "Avancement supprimé." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok)
+        {
+            await RechargerFicheAsync();
+            await ChargerExecutionAsync();
+        }
+    }
+
+    private async Task<bool> ConfirmerAsync(string titre, string message)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, titre }, { x => x.Message, message }, { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        return await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is { Canceled: false };
+    }
+}

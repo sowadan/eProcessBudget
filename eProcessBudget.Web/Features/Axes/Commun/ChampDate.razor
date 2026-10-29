@@ -1,0 +1,17 @@
+@*
+    Saisie d'une date (DateOnly) avec le sélecteur MudBlazor.
+
+    <ChampDate Label="Date de début" @bind-Value="Saisie.DateDebut" />
+*@
+
+<MudDatePicker Date="@Value?.ToDateTime(TimeOnly.MinValue)" DateChanged="ChangerAsync" Label="@Label" Clearable="@(!Obligatoire)"
+               DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public DateOnly? Value { get; set; }
+    [Parameter] public EventCallback<DateOnly?> ValueChanged { get; set; }
+    [Parameter] public bool Obligatoire { get; set; }
+
+    private Task ChangerAsync(DateTime? d) => ValueChanged.InvokeAsync(d is { } v ? DateOnly.FromDateTime(v) : null);
+}

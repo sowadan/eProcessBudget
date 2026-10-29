@@ -1,0 +1,62 @@
+@inject IDotationService Service
+@inject IReferentielService<Site> ServiceSite
+@inject IReferentielService<Structure> ServiceStructure
+@inject IReferentielService<Tiers> ServiceTiers
+
+@*
+    Dotation : la ligne et son imputation (projet, site, service, entité), et la prévision
+    initiale. Exercice ouvert : la dotation naît à 0 et s'alimente par ajustement.
+*@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="sm:col-span-2">
+                <ChoixReference Label="Ligne budgétaire" Elements="_lignes" Obligatoire="true"
+                                Value="Saisie.LigneBudgetaireId" ValueChanged="v => Saisie.LigneBudgetaireId = v" />
+            </div>
+            <ChoixReference Label="Projet (facultatif)" Elements="_projets" Value="Saisie.ProjetId" ValueChanged="v => Saisie.ProjetId = v" />
+            <ChoixReference Label="Site (facultatif)" Elements="_sites" Value="Saisie.SiteId" ValueChanged="v => Saisie.SiteId = v" />
+            <ChoixReference Label="Service (facultatif)" Elements="_structures" Value="Saisie.StructureId" ValueChanged="v => Saisie.StructureId = v" />
+            <ChoixReference Label="Entité bénéficiaire (facultative)" Elements="_tiers" Value="Saisie.TiersId" ValueChanged="v => Saisie.TiersId = v" />
+            <MudNumericField T="decimal" @bind-Value="Saisie.MontantInitial" Label="Prévision initiale" Min="0" Format="N2"
+                             Disabled="!EnPreparation" Variant="Variant.Outlined" Margin="Margin.Dense"
+                             HelperText="@(EnPreparation ? "Figée à l'ouverture de l'exercice." : "Exercice ouvert : alimentez la dotation par un ajustement.")" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public SaisieDotation Saisie { get; set; } = new();
+    [Parameter] public bool EnPreparation { get; set; }
+
+    private List<ElementListe> _lignes = new(), _projets = new(), _sites = new(), _structures = new(), _tiers = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _lignes = await Service.ListerLignesAsync();
+        _projets = await Service.ListerProjetsAsync();
+        _sites = await ServiceSite.ListerPourSelectionAsync();
+        _structures = await ServiceStructure.ListerPourSelectionAsync();
+        _tiers = await ServiceTiers.ListerPourSelectionAsync();
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.EnregistrerAsync(Saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

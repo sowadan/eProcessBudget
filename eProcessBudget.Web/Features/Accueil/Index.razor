@@ -1,0 +1,170 @@
+@page "/"
+@using Microsoft.Extensions.Options
+@using eProcessBudget.Web.Features.Consommation
+@inject IUserContextService UserContext
+@inject IDroitService Droits
+@inject INotificationService Notifications
+@inject IOptions<ApplicationOptions> AppOptions
+
+<PageTitle>Accueil — @AppOptions.Value.Nom</PageTitle>
+
+@*
+    Accueil. Avec le droit TableauDeBordLire, c'est le tableau de bord budgétaire (cahier
+    fonctionnel § 3.11) ; sinon, l'état du compte : notifications et droits.
+*@
+
+<PageHeader Titre="@($"Bonjour, {_prenom}")"
+            Description="@(_tableauDeBord ? "Voici l'état du budget." : "Voici l'état de votre espace de travail.")" />
+
+@if (_userId == Ulid.Empty)
+{
+    <AppAlert Variante="warning" Titre="Compte désactivé" ClasseSup="mb-6">
+        Votre compte n'est plus actif : aucun droit n'est accordé. Contactez votre administrateur.
+    </AppAlert>
+}
+else if (_estPlateforme)
+{
+    <AppAlert Variante="info" Titre="Compte plateforme" ClasseSup="mb-6">
+        Vous administrez la plateforme : organismes, comptes et profils. Les données budgétaires
+        des organismes ne vous sont pas accessibles.
+    </AppAlert>
+}
+
+@if (_tableauDeBord)
+{
+    <TableauDeBordBudgetaire />
+}
+else
+{
+<!-- ═══ Indicateurs ══════════════════════════════════════════════════════ -->
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+
+    <AppStatCard Label="Notifications non lues"
+                 Valeur="@_nonLues.ToString()"
+                 Icone="bell"
+                 SousTitre="@(_nonLues == 0 ? "Vous êtes à jour" : "À consulter")"
+                 CouleurFond="#FEF3C7" CouleurIcone="#92400E" />
+
+    <AppStatCard Label="Droits accordés"
+                 Valeur="@_nbDroits.ToString()"
+                 Icone="shield-check"
+                 SousTitre="sur votre compte"
+                 CouleurFond="#DCFCE7" CouleurIcone="#166534" />
+
+    <AppStatCard Label="Stockage"
+                 Valeur="SQL Server"
+                 Icone="collection"
+                 SousTitre="base de données"
+                 CouleurFond="#E0F2FE" CouleurIcone="#075985" />
+
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- ═══ Prise en main ════════════════════════════════════════════════ -->
+    <AppCard Titre="Premiers pas" SousTitre="Ce qu'il reste à faire pour rendre ce socle vôtre"
+             ClasseSup="lg:col-span-2">
+        <ol class="space-y-4">
+            @foreach (var (index, etape) in _etapes.Select((e, i) => (i + 1, e)))
+            {
+                <li class="flex gap-4">
+                    <span class="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center
+                                 text-xs font-bold text-white"
+                          style="background-color: var(--app-secondaire);">@index</span>
+                    <div class="min-w-0">
+                        <p class="text-sm font-semibold text-gray-800">@etape.Titre</p>
+                        <p class="text-sm text-gray-500 mt-0.5">@etape.Detail</p>
+                        @if (!string.IsNullOrEmpty(etape.Fichier))
+                        {
+                            <code class="inline-block mt-1 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+                                @etape.Fichier
+                            </code>
+                        }
+                    </div>
+                </li>
+            }
+        </ol>
+    </AppCard>
+
+    <!-- ═══ Votre compte ═════════════════════════════════════════════════ -->
+    <AppCard Titre="Votre compte">
+        <div class="space-y-4">
+            <InfoChamp Label="Nom" Valeur="@_nom" />
+            <InfoChamp Label="Identifiant" Valeur="@_matricule" />
+
+            <InfoChamp Label="Droits">
+                @if (_droits.Count == 0)
+                {
+                    <p class="text-sm text-gray-400">Aucun droit particulier</p>
+                }
+                else
+                {
+                    <div class="flex flex-wrap gap-1.5 mt-1">
+                        @foreach (var droit in _droits.Take(8))
+                        {
+                            <AppBadge Variante="info" Petit="true">@DroitHelper.Libelle(droit)</AppBadge>
+                        }
+                        @if (_droits.Count > 8)
+                        {
+                            <AppBadge Petit="true">+ @(_droits.Count - 8)</AppBadge>
+                        }
+                    </div>
+                }
+            </InfoChamp>
+        </div>
+    </AppCard>
+</div>
+
+}
+
+@code {
+    private bool _tableauDeBord;
+    private string _nom = "";
+    private string _prenom = "";
+    private string _matricule = "";
+    private Ulid _userId;
+    private bool _estPlateforme;
+    private int _nonLues;
+    private int _nbDroits;
+    private List<TypeDroit> _droits = new();
+
+    private record Etape(string Titre, string Detail, string Fichier = "");
+
+    private static readonly Etape[] _etapes =
+    {
+        new("Poser votre identité visuelle",
+            "Nom, sigle, logo et les quatre couleurs de la charte, au même endroit.",
+            "appsettings.json → section Application"),
+
+        new("Créer la base de données",
+            "Appliquez les migrations (dotnet ef database update) et renseignez la chaîne de connexion.",
+            "docs/09-base-de-donnees.md"),
+
+        new("Créer les organismes et leurs administrateurs",
+            "Avec le compte plateforme : Plateforme › Organismes, puis Administration › Utilisateurs.",
+            "docs/04-authentification.md"),
+
+        new("Déclarer vos droits et votre menu",
+            "Deux fichiers suffisent pour ouvrir une nouvelle section de l'application.",
+            "TypeDroit.cs + MenuApplication.cs")
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var userId = _userId = await UserContext.ObtenirUserIdAsync();
+
+        _nom       = await UserContext.ObtenirNomAsync();
+        _matricule = await UserContext.ObtenirMatriculeAsync();
+        _prenom    = _nom.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? _nom;
+        _estPlateforme = await UserContext.EstAdministrateurPlateformeAsync();
+
+        if (userId == Ulid.Empty) return;
+
+        _droits   = (await Droits.ObtenirDroitsAsync(userId)).OrderBy(DroitHelper.Libelle).ToList();
+        _tableauDeBord = !_estPlateforme && _droits.Contains(TypeDroit.TableauDeBordLire);
+        _nbDroits = _droits.Count;
+        _nonLues  = await Notifications.CompterNonLuesAsync(userId);
+    }
+}
+
+

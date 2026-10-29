@@ -1,0 +1,119 @@
+@typeparam T where T : EntiteOrganisme, new()
+@inject IReferentielService<T> Service
+
+@*
+    Import Excel d'un référentiel (cahier fonctionnel § 3.2.10) : tout ou rien, avec un
+    rapport d'erreurs ligne par ligne. Le modèle est l'export du référentiel lui-même.
+*@
+
+<MudDialog>
+    <DialogContent>
+        @if (_rapport is null)
+        {
+            <p class="text-sm text-gray-600 mb-3">
+                Partez de l'export Excel de « @Service.Descripteur.Titre » : complétez ou corrigez les lignes, puis importez le
+                fichier. La première colonne identifie chaque élément : une valeur connue le met à jour, une valeur nouvelle le crée.
+                <strong>Si une seule ligne est en erreur, rien n'est enregistré.</strong>
+            </p>
+
+            <MudFileUpload T="IBrowserFile" Accept=".xlsx" FilesChanged="ImporterAsync" MaximumFileCount="1">
+                <CustomContent>
+                    <AppButton Icone="download" EnChargement="_import" OnClick="@(() => context.OpenFilePickerAsync())">
+                        Choisir le fichier .xlsx
+                    </AppButton>
+                </CustomContent>
+            </MudFileUpload>
+
+            @if (_erreur is not null)
+            {
+                <div class="mt-3"><AppAlert Variante="danger" Titre="Import impossible">@_erreur</AppAlert></div>
+            }
+        }
+        else if (_rapport.Ok)
+        {
+            <AppAlert Variante="success" Titre="Import terminé">
+                @_rapport.NbLignes ligne(s) lue(s) : @_rapport.NbCrees création(s), @_rapport.NbModifies mise(s) à jour.
+            </AppAlert>
+        }
+        else
+        {
+            <AppAlert Variante="danger" Titre="@($"{_rapport.Erreurs.Count} erreur(s) : rien n'a été enregistré")">
+                Corrigez le fichier puis importez-le de nouveau.
+            </AppAlert>
+
+            <div class="mt-3 max-h-80 overflow-y-auto border border-gray-100 rounded-lg">
+                <MudSimpleTable Dense="true" Hover="true" FixedHeader="true">
+                    <thead><tr><th>Ligne</th><th>Colonne</th><th>Anomalie</th></tr></thead>
+                    <tbody>
+                        @foreach (var e in _rapport.Erreurs.Take(300))
+                        {
+                            <tr>
+                                <td class="tabular-nums">@(e.Ligne == 0 ? "—" : e.Ligne.ToString())</td>
+                                <td>@(e.Colonne ?? "—")</td>
+                                <td>@e.Message</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </div>
+            @if (_rapport.Erreurs.Count > 300)
+            {
+                <p class="text-xs text-gray-500 mt-2">… et @(_rapport.Erreurs.Count - 300) autre(s).</p>
+            }
+        }
+    </DialogContent>
+
+    <DialogActions>
+        @if (_rapport is { Ok: false })
+        {
+            <AppButton Variante="ghost" OnClick="() => _rapport = null">Importer un autre fichier</AppButton>
+        }
+        <AppButton Variante="@(_rapport?.Ok == true ? "primary" : "ghost")" OnClick="Fermer">Fermer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+
+    private RapportImport? _rapport;
+    private bool _import;
+    private string? _erreur;
+
+    private async Task ImporterAsync(IBrowserFile? fichier)
+    {
+        if (fichier is null) return;
+        _erreur = null;
+
+        if (fichier.Size > ExcelReferentielLimites.TailleMaxOctets)
+        {
+            _erreur = "Le fichier dépasse 5 Mo.";
+            return;
+        }
+
+        _import = true;
+        try
+        {
+            // Copie en mémoire : le flux du navigateur ne se relit pas, ClosedXML en a besoin.
+            await using var flux = fichier.OpenReadStream(ExcelReferentielLimites.TailleMaxOctets);
+            using var memoire = new MemoryStream();
+            await flux.CopyToAsync(memoire);
+            memoire.Position = 0;
+
+            _rapport = await Service.ImporterAsync(memoire);
+        }
+        catch (IOException)
+        {
+            _erreur = "Le fichier n'a pas pu être lu entièrement. Réessayez.";
+        }
+        finally
+        {
+            _import = false;
+        }
+    }
+
+    private void Fermer()
+    {
+        if (_rapport?.Ok == true) Dialog.Close(DialogResult.Ok(_rapport));
+        else Dialog.Cancel();
+    }
+}

@@ -1,0 +1,29 @@
+@inherits FormulaireBase<CompteBancaire>
+@inject IReferentielService<CompteComptable> ServiceCompteComptable
+@inject IReferentielService<Devise> ServiceDevise
+
+@* Formulaire de saisie : CompteBancaire. Généré à l'identique pour tous les référentiels ; les règles sont dans CatalogueReferentiels. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <MudTextField @bind-Value="Element.NumeroCompte" Label="Numéro de compte" MaxLength="50" Required="true" RequiredError="Numéro de compte : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Banque" Label="Banque" MaxLength="150" Required="true" RequiredError="Banque : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Intitule" Label="Intitulé" MaxLength="200" Required="true" RequiredError="Intitulé : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+    <div><ChoixReference Label="Devise" Elements="_devises" Obligatoire="true"
+                    Value="Element.DeviseId" ValueChanged="v => Element.DeviseId = v ?? Ulid.Empty" /></div>
+    <div><ChoixReference Label="Compte de trésorerie" Elements="_comptes"
+                    Value="Element.CompteComptableId" ValueChanged="v => Element.CompteComptableId = v" /></div>
+</div>
+
+@code {
+    private List<ElementListe> _devises = new();
+    private List<ElementListe> _comptes = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _devises = await ServiceDevise.ListerPourSelectionAsync();
+        _comptes = await ServiceCompteComptable.ListerPourSelectionAsync();
+    }
+}

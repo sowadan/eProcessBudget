@@ -1,0 +1,50 @@
+{
+  "//": [
+    "Profils de lancement local (dotnet run, Visual Studio, VS Code).",
+    "",
+    "ASPNETCORE_ENVIRONMENT y vaut Development : sans ce fichier, dotnet run",
+    "bascule en Production et charge appsettings.Production.json, qui exige",
+    "une base de données.",
+    "",
+    "Ce fichier ne concerne QUE le poste du développeur : il n'est jamais",
+    "déployé. En production, l'environnement se règle par la variable",
+    "d'environnement du serveur."
+  ],
+
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+
+  "profiles": {
+    "http": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "applicationUrl": "http://localhost:5100",
+      "dotnetRunMessages": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+
+    "https": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "applicationUrl": "https://localhost:7100;http://localhost:5100",
+      "dotnetRunMessages": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+
+    "//Production": "Pour vérifier le comportement de production en local. Exige une base de données.",
+    "Production (test local)": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "applicationUrl": "https://localhost:7100",
+      "dotnetRunMessages": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Production"
+      }
+    }
+  }
+}
+
+

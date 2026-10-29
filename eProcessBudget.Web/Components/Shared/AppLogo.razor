@@ -1,0 +1,63 @@
+@using Microsoft.Extensions.Options
+@inject IOptions<ApplicationOptions> AppOptions
+
+@*
+    Icône de l'application (carrée).
+
+      - Application:LogoUrl            -> icône sur fond clair ;
+      - Application:LogoFondSombreUrl  -> icône sur fond sombre (FondSombre="true") ;
+      - aucune des deux                -> pastille générée avec le sigle (Application:Sigle).
+
+    Fichiers livrés : wwwroot/img/logo-icone.svg (tuile marine) et
+    wwwroot/img/logo-icone-fond-sombre.svg (tuile blanche). En SVG, ils restent nets à
+    toutes les tailles. Pour le nom à côté de l'icône, utilisez <AppMarque>.
+*@
+
+@if (!string.IsNullOrWhiteSpace(Url))
+{
+    <img src="@Url" alt="@AppOptions.Value.Nom" class="@Class" style="@Style; object-fit: contain;"
+         width="@Pixels" height="@Pixels" />
+}
+else
+{
+    <span class="@Class inline-flex items-center justify-center font-extrabold select-none"
+          style="@Style; background: var(--app-primaire); color: #ffffff; border-radius: 23%;
+                 letter-spacing: -0.02em; line-height: 1;"
+          title="@AppOptions.Value.Nom">
+        @Sigle
+    </span>
+}
+
+@code {
+    [Parameter] public string Class { get; set; } = "";
+    [Parameter] public string Style { get; set; } = "";
+
+    /// <summary>true sur un fond sombre : utilise la variante claire de l'icône.</summary>
+    [Parameter] public bool FondSombre { get; set; }
+
+    /// <summary>Taille d'affichage, en pixels (attributs width/height : pas de saut de mise en page).</summary>
+    [Parameter] public int Pixels { get; set; } = 32;
+
+    private string? Url
+    {
+        get
+        {
+            var o = AppOptions.Value;
+            return FondSombre && !string.IsNullOrWhiteSpace(o.LogoFondSombreUrl) ? o.LogoFondSombreUrl : o.LogoUrl;
+        }
+    }
+
+    /// <summary>Sigle affiché, borné à 3 caractères pour rester lisible dans la pastille.</summary>
+    private string Sigle
+    {
+        get
+        {
+            var brut = AppOptions.Value.Sigle;
+            if (string.IsNullOrWhiteSpace(brut)) brut = AppOptions.Value.NomCourt;
+            if (string.IsNullOrWhiteSpace(brut)) return "?";
+
+            var sigle = brut.Trim().ToUpperInvariant();
+            return sigle.Length > 3 ? sigle[..3] : sigle;
+        }
+    }
+}

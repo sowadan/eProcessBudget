@@ -1,0 +1,125 @@
+@page "/axes/entretien/contrats"
+@inject IContratService Service
+@inject IProjetService Projets
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Contrats d'entretien — Axes de dépenses</PageTitle>
+
+@*
+    Contrats de l'axe Entretien routier (cahier fonctionnel § 3.5.2 et 3.5.3) : contrats de
+    travaux (kilométrage contractuel) et contrats de prestations (études, contrôle,
+    surveillance, qualité) associés à une opération et au contrat de travaux qu'ils
+    contrôlent. Exécution tous exercices confondus.
+*@
+
+<AutoriseSi DroitsRequis="Axe.Lecture">
+    <PageHeader Titre="Contrats d'entretien" Description="Travaux et prestations de contrôle, avec leur exécution.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><a href="@RoutesAxes.Entretien" class="hover:underline">Entretien routier</a>
+        </BreadcrumbContent>
+        <ActionsContent>
+            @if (_peutSaisir)
+            {
+                <AppButton Icone="plus" OnClick="() => EditerAsync(null)">Nouveau contrat</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <div class="flex flex-col lg:flex-row gap-3">
+            <MudTextField T="string" @bind-Value="_filtre.Recherche" @bind-Value:after="() => ChargerAsync(1)" Placeholder="Numéro ou objet…"
+                          DebounceInterval="300" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" />
+            <ChoixReference Label="Opération" Elements="_projets" Value="_filtre.ProjetId" ValueChanged="v => FiltrerAsync(() => _filtre.ProjetId = v)" />
+            <MudSelect T="TypeContrat?" Value="_filtre.Type" ValueChanged="v => FiltrerAsync(() => _filtre.Type = v)" Label="Type" Clearable="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(t => t is { } v ? LibellesAxes.TypeContrat[v] : "")">
+                @foreach (var t in LibellesAxes.TypesContrat(Axe.Code))
+                {
+                    <MudSelectItem T="TypeContrat?" Value="@t">@LibellesAxes.TypeContrat[t]</MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+    </AppCard>
+
+    <AppCard PaddingCorps="false">
+        <ChildContent>
+            @if (_lignes.Count == 0)
+            {
+                <EtatVide Icone="document-text" Titre="Aucun contrat" />
+            }
+            else
+            {
+                <TableContrats Lignes="_lignes" AvecProjet="true" AvecKm="true" PeutSaisir="_peutSaisir" OnModifier="EditerAsync" OnSupprimer="SupprimerAsync" />
+            }
+        </ChildContent>
+        <PiedContent>
+            <div class="flex items-center justify-between">
+                <p class="text-xs text-gray-500">@_total contrat(s)</p>
+                @if (_total > Taille)
+                {
+                    <MudPagination Count="@((int)Math.Ceiling(_total / (double)Taille))" Selected="_page" SelectedChanged="ChargerAsync" Size="Size.Small" Color="Color.Primary" />
+                }
+            </div>
+        </PiedContent>
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    private const int Taille = 20;
+    private static readonly AxeDepense Axe = AxesDepense.Entretien;
+
+    private readonly FiltreContrats _filtre = new();
+    private List<LigneContrat> _lignes = new();
+    private List<ElementListe> _projets = new();
+    private int _total, _page = 1;
+    private bool _peutSaisir;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutSaisir = (await Droits.ObtenirDroitsAsync(await UserContext.ObtenirUserIdAsync())).Contains(Axe.DroitSaisir);
+        _projets = await Projets.ListerPourSelectionAsync(Axe);
+        await ChargerAsync(1);
+    }
+
+    private async Task FiltrerAsync(Action changer)
+    {
+        changer();
+        await ChargerAsync(1);
+    }
+
+    private async Task ChargerAsync(int page)
+    {
+        _page = page;
+        (_lignes, _total) = await Service.ListerAsync(Axe, _filtre, page, Taille);
+    }
+
+    private async Task EditerAsync(LigneContrat? c)
+    {
+        var saisie = c is null ? new SaisieContrat { ProjetId = _filtre.ProjetId } : await Service.ObtenirSaisieAsync(c.Id);
+        if (saisie is null) return;
+        var parametres = new DialogParameters<DialogContrat> { { x => x.Axe, Axe }, { x => x.Saisie, saisie } };
+        var dialog = await DialogService.ShowAsync<DialogContrat>(c is null ? "Nouveau contrat" : $"Modifier le contrat {c.Numero}", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Contrat enregistré.", Severity.Success);
+            await ChargerAsync(_page);
+        }
+    }
+
+    private async Task SupprimerAsync(LigneContrat c)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, "Supprimer le contrat" }, { x => x.Message, $"Le contrat {c.Numero} est supprimé (suppression logique)." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+        var (ok, erreur) = await Service.SupprimerAsync(c.Id);
+        Snackbar.Add(ok ? "Contrat supprimé." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync(_page);
+    }
+}

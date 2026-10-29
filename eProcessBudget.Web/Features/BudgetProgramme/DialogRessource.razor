@@ -1,0 +1,62 @@
+@inject IProgrammationService Service
+@inject IReferentielService<NatureRecette> ServiceNature
+@inject IReferentielService<SourceFinancement> ServiceSource
+
+@* Ressource programmée : nature de recette, source RI / RE, montant de chaque année du cycle. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <ChoixReference Label="Nature de recette" Elements="_natures" Obligatoire="true" Disabled="@(Ligne is not null)"
+                            Value="_natureId" ValueChanged="v => _natureId = v" />
+            <ChoixReference Label="Source" Elements="_sources" Obligatoire="true" Disabled="@(Ligne is not null)"
+                            Value="_sourceId" ValueChanged="v => _sourceId = v" />
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            @foreach (var a in _annees)
+            {
+                <MudNumericField T="decimal" Value="_montants[a]" ValueChanged="v => _montants[a] = v" Label="@a.ToString()" Min="0"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public LigneCycle Cycle { get; set; } = null!;
+    [Parameter] public LigneRessource? Ligne { get; set; }
+
+    private int[] _annees = [];
+    private readonly Dictionary<int, decimal> _montants = new();
+    private Ulid? _natureId, _sourceId;
+    private List<ElementListe> _natures = new(), _sources = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _annees = Enumerable.Range(Cycle.AnneeReference, Cycle.AnneeFin - Cycle.AnneeReference + 1).ToArray();
+        foreach (var a in _annees) _montants[a] = Ligne?.Montants.GetValueOrDefault(a) ?? 0;
+        (_natureId, _sourceId) = (Ligne?.NatureRecetteId, Ligne?.SourceFinancementId);
+        _natures = await ServiceNature.ListerPourSelectionAsync();
+        _sources = await ServiceSource.ListerPourSelectionAsync();
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        if (_natureId is null || _sourceId is null) { _erreur = "Choisissez la nature et la source."; return; }
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.EnregistrerRessourceAsync(Cycle.Id, _natureId.Value, _sourceId.Value, _montants);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

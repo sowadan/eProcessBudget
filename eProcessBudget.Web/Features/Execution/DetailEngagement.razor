@@ -1,0 +1,422 @@
+@page "/execution/engagements/{Id}"
+@inject IEngagementService Service
+@inject IPaiementService Paiements
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Engagement — Exécution budgétaire</PageTitle>
+
+@*
+    Fiche d'un engagement : cycle de validation (brouillon → soumis → validé), dépassement
+    éventuel, factures, paiements, rejets ou pénalités, échéancier des crédits de paiement.
+*@
+
+<AutoriseSi DroitsRequis="AccesExecution.Lecture">
+    @if (_fiche is null)
+    {
+        @if (_charge)
+        {
+            <AppCard><EtatVide Icone="clipboard-list" Titre="Engagement introuvable" Message="Il a pu être supprimé." /></AppCard>
+        }
+    }
+    else
+    {
+        var e = _fiche.Engagement;
+        <PageHeader Titre="@($"{e.Numero} — {e.Objet}")" Description="@($"{LibellesExecution.TypeEngagement[e.Type]} du {e.Date:dd/MM/yyyy} · exercice {_fiche.Annee}")">
+            <BreadcrumbContent>
+                <a href="/" class="hover:underline">Accueil</a><span>/</span>
+                <a href="/execution/engagements" class="hover:underline">Engagements</a>
+            </BreadcrumbContent>
+            <ActionsContent>
+                @if (Ouvert && Peut(TypeDroit.EngagementSaisir) && e.Statut is StatutSaisie.Brouillon or StatutSaisie.Rejete && !e.EstReport)
+                {
+                    <AppButton Variante="ghost" Icone="pencil" OnClick="ModifierAsync">Modifier</AppButton>
+                    <AppButton Variante="ghost" Icone="trash" OnClick="SupprimerAsync">Supprimer</AppButton>
+                }
+                @if (Ouvert && Peut(TypeDroit.EngagementSaisir) && e.Statut == StatutSaisie.Brouillon)
+                {
+                    <AppButton Icone="arrow-right" OnClick="SoumettreAsync">Soumettre</AppButton>
+                }
+                @if (Ouvert && Peut(TypeDroit.EngagementValider) && e.Statut == StatutSaisie.Soumis && !e.DepassementEnAttente)
+                {
+                    <AppButton Variante="outline" Icone="x-circle" OnClick="RejeterAsync">Rejeter</AppButton>
+                    <AppButton Icone="check-circle" EnChargement="_action" OnClick="ValiderAsync">Valider</AppButton>
+                }
+                @if (Ouvert && Peut(TypeDroit.EngagementValider) && e.Statut == StatutSaisie.Valide && e.Paye == 0 && e.Rejets == 0 && _fiche.Factures.Count == 0)
+                {
+                    <AppButton Variante="outline" Icone="x-circle" OnClick="AnnulerAsync">Annuler</AppButton>
+                }
+            </ActionsContent>
+        </PageHeader>
+
+        @if (e.DepassementEnAttente)
+        {
+            <div class="mb-4">
+                <AppAlert Variante="warning" Titre="Dépassement en attente de décision">
+                    Cet engagement dépasse sa dotation. Il sera validé ou rejeté par le Responsable Budget depuis
+                    <a href="/execution/depassements" class="underline">la file des dépassements</a>.
+                </AppAlert>
+            </div>
+        }
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+            <AppCard Titre="Engagement">
+                <dl class="space-y-1.5 text-sm">
+                    <div class="flex justify-between gap-3"><dt class="text-gray-600">Statut</dt><dd><BadgeStatut Statut="e.Statut" /></dd></div>
+                    <div class="flex justify-between gap-3"><dt class="text-gray-600">Ligne</dt>
+                        <dd class="text-right"><a href="@DetailDotation.Lien(e.DotationId)" class="hover:underline"><span class="font-mono text-xs">@e.LigneCode</span> — @e.LigneLibelle</a></dd></div>
+                    @if (_fiche.Imputation.Length > 0)
+                    {
+                        <div class="flex justify-between gap-3"><dt class="text-gray-600">Imputation</dt><dd class="text-right">@_fiche.Imputation</dd></div>
+                    }
+                    <div class="flex justify-between gap-3"><dt class="text-gray-600">Bénéficiaire</dt><dd class="text-right">@(e.Tiers ?? "—")</dd></div>
+                    @if (_fiche.Contrat is not null)
+                    {
+                        <div class="flex justify-between gap-3"><dt class="text-gray-600">Contrat</dt><dd class="text-right">@_fiche.Contrat</dd></div>
+                    }
+                    @if (_fiche.Origine is not null)
+                    {
+                        <div class="flex justify-between gap-3"><dt class="text-gray-600">Encours reporté de</dt><dd class="font-mono text-xs">@_fiche.Origine</dd></div>
+                    }
+                    @if (_fiche.DateValidation is { } validation)
+                    {
+                        <div class="flex justify-between gap-3"><dt class="text-gray-600">Validé le</dt><dd>@validation.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</dd></div>
+                    }
+                </dl>
+            </AppCard>
+            <AppCard Titre="Montants">
+                <dl class="space-y-1.5 text-sm">
+                    <LigneMontant Libelle="Montant engagé" Valeur="e.Montant" Fort="true" />
+                    <LigneMontant Libelle="Payé" Valeur="e.Paye" />
+                    <LigneMontant Libelle="Rejets et pénalités" Valeur="e.Rejets" />
+                    <LigneMontant Libelle="Reste à payer" Valeur="e.ResteAPayer" Fort="true" />
+                    <LigneMontant Libelle="Facturé" Valeur="_fiche.Factures.Sum(f => f.Montant)" />
+                </dl>
+            </AppCard>
+            <AppCard Titre="Échéancier des CP">
+                <ActionsContent>
+                    @if (Ouvert && Peut(TypeDroit.EngagementSaisir) && e.Statut is not (StatutSaisie.Annule or StatutSaisie.Rejete))
+                    {
+                        <AppButton Variante="ghost" Taille="sm" Icone="pencil" OnClick="EcheancierAsync">Définir</AppButton>
+                    }
+                </ActionsContent>
+                <ChildContent>
+                    @if (_fiche.Echeancier.Count == 0)
+                    {
+                        <p class="text-sm text-gray-500">Aucun échéancier : utile pour un engagement pluriannuel (AE sur la durée, CP annuels).</p>
+                    }
+                    else
+                    {
+                        <dl class="space-y-1.5 text-sm">
+                            @foreach (var (annee, cp) in _fiche.Echeancier.OrderBy(x => x.Key))
+                            {
+                                <LigneMontant Libelle="@($"CP {annee}")" Valeur="cp" />
+                            }
+                            <LigneMontant Libelle="Total des CP" Valeur="_fiche.Echeancier.Values.Sum()" Fort="true" />
+                        </dl>
+                    }
+                </ChildContent>
+            </AppCard>
+        </div>
+
+        <MudTabs Elevation="0" Rounded="true" TabPanelsClass="pt-4">
+            <MudTabPanel Text="@($"Paiements ({_fiche.Paiements.Count})")">
+                <AppCard PaddingCorps="false">
+                    <ActionsContent>
+                        @if (Payable && Peut(TypeDroit.PaiementSaisir))
+                        {
+                            <AppButton Taille="sm" Icone="plus" OnClick="PayerAsync">Paiement</AppButton>
+                        }
+                    </ActionsContent>
+                    <ChildContent>
+                        @if (_fiche.Paiements.Count == 0)
+                        {
+                            <EtatVide Icone="check-circle" Titre="Aucun paiement" />
+                        }
+                        else
+                        {
+                            <MudSimpleTable Dense="true">
+                                <thead><tr><th>Pièce</th><th>Date</th><th>Mode</th><th>Facture</th><th>Compte</th><th class="text-right">Montant</th><th>Statut</th><th></th></tr></thead>
+                                <tbody>
+                                    @foreach (var p in _fiche.Paiements)
+                                    {
+                                        <tr class="@(p.Statut == StatutSaisie.Annule ? "text-gray-400 line-through" : "")">
+                                            <td class="font-mono text-xs">@p.NumeroPiece</td>
+                                            <td class="whitespace-nowrap">@p.Date.ToString("dd/MM/yyyy")</td>
+                                            <td>@LibellesExecution.ModePaiement[p.Mode]</td>
+                                            <td class="text-xs">@p.Facture</td>
+                                            <td class="text-xs">@p.Compte</td>
+                                            <td class="tabular-nums text-right">@Formats.Montant(p.Montant)</td>
+                                            <td><BadgeStatut Statut="p.Statut" /></td>
+                                            <td class="text-right">
+                                                @if (Ouvert && Peut(TypeDroit.PaiementSaisir) && p.Statut == StatutSaisie.Valide)
+                                                {
+                                                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Block" title="Annuler le paiement" OnClick="() => AnnulerPaiementAsync(p)" />
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        }
+                    </ChildContent>
+                </AppCard>
+            </MudTabPanel>
+
+            <MudTabPanel Text="@($"Factures ({_fiche.Factures.Count})")">
+                <AppCard PaddingCorps="false">
+                    <ActionsContent>
+                        @if (Payable && (Peut(TypeDroit.PaiementSaisir) || Peut(TypeDroit.EngagementSaisir)))
+                        {
+                            <AppButton Taille="sm" Icone="plus" OnClick="FacturerAsync">Facture</AppButton>
+                        }
+                    </ActionsContent>
+                    <ChildContent>
+                        @if (_fiche.Factures.Count == 0)
+                        {
+                            <EtatVide Icone="document-text" Titre="Aucune facture" Message="Les factures sont enregistrées pour mémoire : la réalisation se mesure par les paiements." />
+                        }
+                        else
+                        {
+                            <MudSimpleTable Dense="true">
+                                <thead><tr><th>Numéro</th><th>Date</th><th>Reçue le</th><th class="text-right">Montant TTC</th><th>Payée</th><th></th></tr></thead>
+                                <tbody>
+                                    @foreach (var f in _fiche.Factures)
+                                    {
+                                        <tr>
+                                            <td class="font-mono text-xs">@f.Numero</td>
+                                            <td>@f.DateFacture.ToString("dd/MM/yyyy")</td>
+                                            <td>@f.DateReception.ToString("dd/MM/yyyy")</td>
+                                            <td class="tabular-nums text-right">@Formats.Montant(f.Montant)</td>
+                                            <td>@(f.EstPayee ? "Oui" : "Non")</td>
+                                            <td class="text-right">
+                                                @if (Ouvert && !f.EstPayee && (Peut(TypeDroit.PaiementSaisir) || Peut(TypeDroit.EngagementSaisir)))
+                                                {
+                                                    <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerFactureAsync(f)" />
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        }
+                    </ChildContent>
+                </AppCard>
+            </MudTabPanel>
+
+            <MudTabPanel Text="@($"Rejets et pénalités ({_fiche.Rejets.Count})")">
+                <AppCard PaddingCorps="false">
+                    <ActionsContent>
+                        @if (Payable && Peut(TypeDroit.EngagementSaisir))
+                        {
+                            <AppButton Taille="sm" Icone="plus" OnClick="RejetAsync">Constat</AppButton>
+                        }
+                    </ActionsContent>
+                    <ChildContent>
+                        @if (_fiche.Rejets.Count == 0)
+                        {
+                            <EtatVide Icone="exclamation" Titre="Aucun rejet ni pénalité" Message="Ils réduisent le reste à payer et l'encours à reporter." />
+                        }
+                        else
+                        {
+                            <MudSimpleTable Dense="true">
+                                <thead><tr><th>Type</th><th>Date</th><th>Motif</th><th class="text-right">Montant</th><th></th></tr></thead>
+                                <tbody>
+                                    @foreach (var r in _fiche.Rejets)
+                                    {
+                                        <tr>
+                                            <td>@r.Type</td>
+                                            <td>@r.Date.ToString("dd/MM/yyyy")</td>
+                                            <td class="text-xs text-gray-600">@r.Motif</td>
+                                            <td class="tabular-nums text-right">@Formats.Montant(r.Montant)</td>
+                                            <td class="text-right">
+                                                @if (Ouvert && Peut(TypeDroit.EngagementSaisir))
+                                                {
+                                                    <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerRejetAsync(r)" />
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        }
+                    </ChildContent>
+                </AppCard>
+            </MudTabPanel>
+
+            @if (_fiche.Depassements.Count > 0)
+            {
+                <MudTabPanel Text="@($"Dépassements ({_fiche.Depassements.Count})")">
+                    <AppCard PaddingCorps="false">
+                        <MudSimpleTable Dense="true">
+                            <thead><tr><th>Dépassement</th><th>Taux après</th><th>Motif</th><th>Décision</th><th>Commentaire</th></tr></thead>
+                            <tbody>
+                                @foreach (var d in _fiche.Depassements)
+                                {
+                                    <tr>
+                                        <td class="tabular-nums">@Formats.Montant(d.Montant)</td>
+                                        <td class="tabular-nums">@Formats.Taux(d.TauxApres)</td>
+                                        <td class="text-xs text-gray-600">@d.Motif</td>
+                                        <td>
+                                            <AppBadge Variante="@(d.Statut switch { StatutValidation.Validee => "success", StatutValidation.Rejetee => "danger", _ => "warning" })" Petit="true">
+                                                @LibellesExecution.StatutValidation[d.Statut]
+                                            </AppBadge>
+                                            @if (d.DateDecision is { } dd) { <span class="text-xs text-gray-500 ml-1">@dd.ToLocalTime().ToString("dd/MM/yyyy")</span> }
+                                        </td>
+                                        <td class="text-xs text-gray-600">@d.Commentaire</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </AppCard>
+                </MudTabPanel>
+            }
+        </MudTabs>
+    }
+</AutoriseSi>
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    public static string Lien(Ulid id) => $"/execution/engagements/{id}";
+
+    private IReadOnlySet<TypeDroit> _droits = new HashSet<TypeDroit>();
+    private FicheEngagement? _fiche;
+    private bool _charge, _action;
+
+    private bool Peut(TypeDroit droit) => _droits.Contains(droit);
+    private bool Ouvert => _fiche?.StatutExercice == StatutExercice.Ouvert;
+    private bool Payable => Ouvert && _fiche!.Engagement.Statut == StatutSaisie.Valide && _fiche.Engagement.ResteAPayer > 0;
+
+    protected override async Task OnInitializedAsync()
+        => _droits = await Droits.ObtenirDroitsAsync(await UserContext.ObtenirUserIdAsync());
+
+    protected override async Task OnParametersSetAsync() => await ChargerAsync();
+
+    private async Task ChargerAsync()
+    {
+        _fiche = Ulid.TryParse(Id, out var id) ? await Service.ObtenirAsync(id) : null;
+        _charge = true;
+    }
+
+    private async Task Signaler((bool Ok, string? Erreur) r, string succes)
+    {
+        Snackbar.Add(r.Ok ? succes : r.Erreur!, r.Ok ? Severity.Success : Severity.Error);
+        if (r.Ok) await ChargerAsync();
+    }
+
+    private async Task ModifierAsync()
+    {
+        var saisie = await Service.ObtenirSaisieAsync(_fiche!.Engagement.Id);
+        if (saisie is null) return;
+        var parametres = new DialogParameters<DialogEngagement>
+        {
+            { x => x.Saisie, saisie }, { x => x.ExerciceId, _fiche.ExerciceId },
+            { x => x.LibelleDotation, $"{_fiche.Engagement.LigneCode} — {_fiche.Engagement.LigneLibelle}" }
+        };
+        var dialog = await DialogService.ShowAsync<DialogEngagement>("Modifier l'engagement", parametres, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) { Snackbar.Add("Engagement enregistré.", Severity.Success); await ChargerAsync(); }
+    }
+
+    private async Task SupprimerAsync()
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, "Supprimer l'engagement" }, { x => x.Message, $"L'engagement {_fiche!.Engagement.Numero} est supprimé (suppression logique)." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+        var (ok, erreur) = await Service.SupprimerAsync(_fiche.Engagement.Id);
+        Snackbar.Add(ok ? "Engagement supprimé." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) Nav.NavigateTo("/execution/engagements");
+    }
+
+    private async Task SoumettreAsync()
+    {
+        var evaluation = await Service.EvaluerAsync(_fiche!.Engagement.Id);
+        if (evaluation is null) return;
+        var parametres = new DialogParameters<DialogSoumission> { { x => x.EngagementId, _fiche.Engagement.Id }, { x => x.Evaluation, evaluation } };
+        var dialog = await DialogService.ShowAsync<DialogSoumission>("Soumettre l'engagement", parametres, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) { Snackbar.Add("Engagement soumis à validation.", Severity.Success); await ChargerAsync(); }
+    }
+
+    private async Task ValiderAsync()
+    {
+        _action = true;
+        var r = await Service.ValiderAsync(_fiche!.Engagement.Id);
+        _action = false;
+        if (!r.Ok) { Snackbar.Add(r.Erreur!, Severity.Error); return; }
+        Snackbar.Add(r.DepassementSoumis
+            ? "Dépassement constaté : l'engagement attend la décision du Responsable Budget."
+            : "Engagement validé.", r.DepassementSoumis ? Severity.Warning : Severity.Success);
+        await ChargerAsync();
+    }
+
+    private async Task<string?> MotifAsync(string titre, string message, string libelle)
+    {
+        var parametres = new DialogParameters<DialogMotif> { { x => x.Message, message }, { x => x.Libelle, libelle }, { x => x.LongueurMax, 1000 } };
+        return await (await DialogService.ShowAsync<DialogMotif>(titre, parametres)).Result is { Canceled: false, Data: string motif } ? motif : null;
+    }
+
+    private async Task RejeterAsync()
+    {
+        if (await MotifAsync("Rejet", $"Rejeter l'engagement {_fiche!.Engagement.Numero}. Son auteur sera notifié du motif.", "Rejeter") is { } motif)
+            await Signaler(await Service.RejeterAsync(_fiche.Engagement.Id, motif), "Engagement rejeté.");
+    }
+
+    private async Task AnnulerAsync()
+    {
+        if (await MotifAsync("Annulation", $"Annuler l'engagement {_fiche!.Engagement.Numero} : il ne comptera plus dans la situation.", "Annuler l'engagement") is { } motif)
+            await Signaler(await Service.AnnulerAsync(_fiche.Engagement.Id, motif), "Engagement annulé.");
+    }
+
+    private async Task PayerAsync()
+    {
+        var parametres = new DialogParameters<DialogPaiement>
+        {
+            { x => x.EngagementId, _fiche!.Engagement.Id }, { x => x.ResteAPayer, _fiche.Engagement.ResteAPayer }
+        };
+        var dialog = await DialogService.ShowAsync<DialogPaiement>("Nouveau paiement", parametres, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) { Snackbar.Add("Paiement enregistré.", Severity.Success); await ChargerAsync(); }
+    }
+
+    private async Task AnnulerPaiementAsync(LignePaiement p)
+    {
+        if (await MotifAsync("Annulation du paiement", $"Annuler le paiement {p.NumeroPiece} ({Formats.Montant(p.Montant)}).", "Annuler le paiement") is { } motif)
+            await Signaler(await Paiements.AnnulerAsync(p.Id, motif), "Paiement annulé.");
+    }
+
+    private async Task FacturerAsync()
+    {
+        var parametres = new DialogParameters<DialogFacture> { { x => x.EngagementId, _fiche!.Engagement.Id } };
+        var dialog = await DialogService.ShowAsync<DialogFacture>("Nouvelle facture", parametres, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) { Snackbar.Add("Facture enregistrée.", Severity.Success); await ChargerAsync(); }
+    }
+
+    private async Task SupprimerFactureAsync(LigneFacture f)
+        => await Signaler(await Paiements.SupprimerFactureAsync(f.Id), "Facture supprimée.");
+
+    private async Task RejetAsync()
+    {
+        var parametres = new DialogParameters<DialogRejet> { { x => x.EngagementId, _fiche!.Engagement.Id } };
+        var dialog = await DialogService.ShowAsync<DialogRejet>("Rejet ou pénalité", parametres, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) { Snackbar.Add("Constat enregistré.", Severity.Success); await ChargerAsync(); }
+    }
+
+    private async Task SupprimerRejetAsync(LigneRejet r)
+        => await Signaler(await Service.SupprimerRejetAsync(r.Id), "Constat supprimé.");
+
+    private async Task EcheancierAsync()
+    {
+        var parametres = new DialogParameters<DialogEcheancier>
+        {
+            { x => x.EngagementId, _fiche!.Engagement.Id }, { x => x.Annee, _fiche.Annee },
+            { x => x.Montant, _fiche.Engagement.Montant }, { x => x.Existant, _fiche.Echeancier }
+        };
+        var dialog = await DialogService.ShowAsync<DialogEcheancier>("Échéancier des crédits de paiement", parametres, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) { Snackbar.Add("Échéancier enregistré.", Severity.Success); await ChargerAsync(); }
+    }
+}

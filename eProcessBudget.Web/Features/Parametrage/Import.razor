@@ -1,0 +1,58 @@
+@page "/parametrage/import"
+
+<PageTitle>Import Excel — Paramétrage</PageTitle>
+
+@*
+    Import Excel des référentiels (cahier fonctionnel § 3.2.10), pour la reprise de
+    l'existant. Chaque référentiel s'importe à partir de son propre export, dans l'ordre
+    proposé : un référentiel cité par un autre (l'axe d'une rubrique) doit exister avant.
+*@
+
+<AutoriseSi DroitsRequis="new[] { TypeDroit.ParametrageLire, TypeDroit.ParametrageGerer }">
+    <PageHeader Titre="Import Excel" Description="Reprise de l'existant : téléchargez le modèle d'un référentiel, complétez-le, importez-le.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span>
+            <a href="/parametrage" class="hover:underline">Paramétrage</a>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppAlert Variante="info" Titre="Comment procéder" ClasseSup="mb-6">
+        Suivez l'ordre de la liste. Le modèle d'un référentiel est son export : la ligne d'en-têtes (un astérisque signale une
+        colonne obligatoire), les éléments déjà saisis, et une feuille « Aide ». Une ligne dont la première colonne existe déjà
+        met l'élément à jour ; sinon, elle le crée. Si une seule ligne est en erreur, rien n'est enregistré et le rapport
+        indique chaque anomalie avec son numéro de ligne.
+    </AppAlert>
+
+    <AppCard PaddingCorps="false">
+        <ul class="divide-y divide-gray-100">
+            @foreach (var (r, rang) in Ordonnes.Select((r, i) => (r, i + 1)))
+            {
+                <li class="flex items-center justify-between gap-4 px-5 py-3">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                              style="background-color: var(--app-secondaire);">@rang</span>
+                        <div class="min-w-0">
+                            <a href="@r.Chemin" class="text-sm font-medium text-gray-800 hover:underline">@r.Titre</a>
+                            <p class="text-xs text-gray-400">@r.Groupe</p>
+                        </div>
+                    </div>
+                    <DynamicComponent Type="typeof(ActionsExcel<>).MakeGenericType(r.Type)" />
+                </li>
+            }
+        </ul>
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    /// <summary>Ordre d'import : un référentiel après ceux qu'il cite.</summary>
+    private static readonly string[] Ordre =
+    [
+        "listes-valeurs", "devises", "axes", "unites-mesure", "risques", "natures-depense", "plan-comptable", "tiers",
+        "sources-financement", "natures-recette", "rubriques", "sous-rubriques", "lignes-budgetaires", "motifs-ajustement",
+        "structures", "sites", "categories-emploi", "agents", "types-travaux", "comptes-bancaires",
+        "programmes", "actions", "activites", "indicateurs"
+    ];
+
+    private static IEnumerable<ReferentielCatalogue> Ordonnes
+        => CatalogueReferentiels.Tous.OrderBy(r => Array.IndexOf(Ordre, r.Cle) is var i && i < 0 ? int.MaxValue : i);
+}

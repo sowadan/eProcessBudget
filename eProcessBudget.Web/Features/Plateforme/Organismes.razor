@@ -1,0 +1,201 @@
+@page "/plateforme/organismes"
+@inject IOrganismeService OrganismeService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Organismes — Plateforme</PageTitle>
+
+@*
+    Organismes de la plateforme (Administrateur plateforme, droit OrganismeGerer).
+
+    Créer un organisme provisionne ses données initiales (paramètres, devise, seuils, axes,
+    natures de dépense...). Le suspendre ferme immédiatement l'accès de ses utilisateurs ;
+    ses données restent intactes. Cet écran n'affiche aucune donnée budgétaire.
+*@
+
+<AutoriseSi DroitsRequis="new[] { TypeDroit.OrganismeGerer }">
+
+    <PageHeader Titre="Organismes"
+                Description="Organismes hébergés par la plateforme, leur statut et leurs comptes.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a>
+            <span>/</span>
+            <span class="text-gray-700">Plateforme</span>
+        </BreadcrumbContent>
+        <ActionsContent>
+            <AppButton Icone="plus" OnClick="CreerAsync">Nouvel organisme</AppButton>
+        </ActionsContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-6">
+        <div class="flex flex-col sm:flex-row gap-3">
+            <MudTextField T="string" @bind-Value="_recherche" @bind-Value:after="ChargerAsync"
+                          Placeholder="Code, raison sociale ou sigle…" DebounceInterval="300"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                          Class="flex-1" />
+
+            <MudSelect T="StatutOrganisme?" @bind-Value="_statut" @bind-Value:after="ChargerAsync"
+                       Label="Statut" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                       Style="min-width:180px;">
+                @foreach (var s in Enum.GetValues<StatutOrganisme>())
+                {
+                    <MudSelectItem T="StatutOrganisme?" Value="@s">@Libelle(s)</MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+    </AppCard>
+
+    <AppCard PaddingCorps="false">
+        <ChildContent>
+            @if (_chargement)
+            {
+                <div class="flex justify-center py-16">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                </div>
+            }
+            else if (_items.Count == 0)
+            {
+                <EtatVide Icone="office-building" Titre="Aucun organisme"
+                          Message="Créez le premier organisme, puis son administrateur depuis Administration › Utilisateurs." />
+            }
+            else
+            {
+                <div class="zone-defilante">
+                    <MudTable Items="_items" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Code</MudTh>
+                            <MudTh>Raison sociale</MudTh>
+                            <MudTh>Mise en service</MudTh>
+                            <MudTh>Comptes</MudTh>
+                            <MudTh>Statut</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+
+                        <RowTemplate>
+                            <MudTd DataLabel="Code">
+                                <span class="font-mono text-xs font-semibold text-gray-800">@context.Code</span>
+                            </MudTd>
+                            <MudTd DataLabel="Raison sociale">
+                                <p class="text-sm text-gray-700">@context.RaisonSociale</p>
+                                <p class="text-xs text-gray-400">@context.Sigle</p>
+                            </MudTd>
+                            <MudTd DataLabel="Mise en service">
+                                <span class="text-xs text-gray-600 tabular-nums">@(context.DateActivation?.ToString("dd/MM/yyyy") ?? "—")</span>
+                            </MudTd>
+                            <MudTd DataLabel="Comptes">
+                                <span class="text-sm text-gray-600">@context.NbUtilisateurs</span>
+                            </MudTd>
+                            <MudTd DataLabel="Statut">
+                                <AppBadge Variante="@Variante(context.Statut)">@Libelle(context.Statut)</AppBadge>
+                            </MudTd>
+                            <MudTd Style="text-align:right; white-space:nowrap;">
+                                <MudTooltip Text="Modifier">
+                                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit"
+                                                   OnClick="() => ModifierAsync(context)" />
+                                </MudTooltip>
+                                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true"
+                                         AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                                    @foreach (var cible in Enum.GetValues<StatutOrganisme>().Where(s => s != context.Statut))
+                                    {
+                                        <MudMenuItem OnClick="() => ChangerStatutAsync(context, cible)">@Action(cible)</MudMenuItem>
+                                    }
+                                </MudMenu>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </div>
+            }
+        </ChildContent>
+        <PiedContent>
+            <p class="text-xs text-gray-500">@_items.Count organisme(s)</p>
+        </PiedContent>
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    private List<LigneOrganisme> _items = new();
+    private bool _chargement = true;
+    private string? _recherche;
+    private StatutOrganisme? _statut;
+
+    protected override async Task OnInitializedAsync() => await ChargerAsync();
+
+    private async Task ChargerAsync()
+    {
+        _chargement = true;
+        _items = await OrganismeService.ListerAsync(_recherche, _statut);
+        _chargement = false;
+    }
+
+    private async Task CreerAsync()
+    {
+        var parametres = new DialogParameters<DialogOrganisme> { { x => x.Organisme, new Organisme() } };
+        var dialog = await DialogService.ShowAsync<DialogOrganisme>("Nouvel organisme", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is not { Canceled: false }) return;
+
+        Snackbar.Add("Organisme créé avec ses données initiales. Créez maintenant son administrateur.", Severity.Success);
+        await ChargerAsync();
+    }
+
+    private async Task ModifierAsync(LigneOrganisme ligne)
+    {
+        var organisme = await OrganismeService.ObtenirAsync(ligne.Id);
+        if (organisme is null)
+        {
+            Snackbar.Add("Organisme introuvable.", Severity.Error);
+            return;
+        }
+
+        var parametres = new DialogParameters<DialogOrganisme> { { x => x.Organisme, organisme } };
+        var dialog = await DialogService.ShowAsync<DialogOrganisme>($"Modifier « {organisme.Code} »", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is not { Canceled: false }) return;
+
+        Snackbar.Add("Organisme mis à jour.", Severity.Success);
+        await ChargerAsync();
+    }
+
+    private async Task ChangerStatutAsync(LigneOrganisme ligne, StatutOrganisme cible)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, $"{Action(cible)} « {ligne.RaisonSociale} »" },
+            { x => x.Message, cible == StatutOrganisme.Actif
+                ? "Ses utilisateurs pourront de nouveau se connecter."
+                : "Ses utilisateurs perdent l'accès immédiatement, sessions ouvertes comprises. Les données sont conservées." },
+            { x => x.Libelle, Action(cible) },
+            { x => x.Danger, cible != StatutOrganisme.Actif }
+        };
+        var dialog = await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres);
+        if (await dialog.Result is not { Canceled: false }) return;
+
+        var (ok, erreur) = await OrganismeService.ChangerStatutAsync(ligne.Id, cible);
+        Snackbar.Add(ok ? "Statut modifié." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync();
+    }
+
+    private static string Libelle(StatutOrganisme s) => s switch
+    {
+        StatutOrganisme.Actif    => "Actif",
+        StatutOrganisme.Suspendu => "Suspendu",
+        StatutOrganisme.Archive  => "Archivé",
+        _ => s.ToString()
+    };
+
+    private static string Action(StatutOrganisme s) => s switch
+    {
+        StatutOrganisme.Actif    => "Activer",
+        StatutOrganisme.Suspendu => "Suspendre",
+        StatutOrganisme.Archive  => "Archiver",
+        _ => s.ToString()
+    };
+
+    private static string Variante(StatutOrganisme s) => s switch
+    {
+        StatutOrganisme.Actif    => "success",
+        StatutOrganisme.Suspendu => "warning",
+        _                        => "neutral"
+    };
+}

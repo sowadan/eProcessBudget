@@ -1,0 +1,117 @@
+@page "/execution/engagements"
+@inject IEngagementService Service
+@inject IReferentielService<Tiers> ServiceTiers
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject NavigationManager Nav
+
+<PageTitle>Engagements — Exécution budgétaire</PageTitle>
+
+@*
+    Engagements de l'exercice (§ 3.4.2) : autorisations d'engagement (AE) et de dépense
+    (AD). Le Responsable Budget y retrouve les engagements soumis à valider.
+*@
+
+<AutoriseSi DroitsRequis="AccesExecution.Lecture">
+    <PageHeader Titre="Engagements" Description="Autorisations d'engagement et de dépense, leur validation et leur paiement.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><a href="/execution" class="hover:underline">Exécution budgétaire</a>
+        </BreadcrumbContent>
+        <ActionsContent>
+            @if (_droits.Contains(TypeDroit.EngagementSaisir) && _exercice?.Statut == StatutExercice.Ouvert)
+            {
+                <AppButton Icone="plus" OnClick="NouveauAsync">Nouvel engagement</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <div class="flex flex-col lg:flex-row gap-3">
+            <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+            <MudSelect T="StatutSaisie?" Value="_filtre.Statut" ValueChanged="ChangerStatutAsync" Label="Statut (tous si vide)" Clearable="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:180px"
+                       ToStringFunc="@(s => s is { } v ? LibellesExecution.Statut[v] : "")">
+                @foreach (var (s, libelle) in LibellesExecution.Statut)
+                {
+                    <MudSelectItem T="StatutSaisie?" Value="@s">@libelle</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSelect T="TypeEngagement?" Value="_filtre.Type" ValueChanged="ChangerTypeAsync" Label="Type" Clearable="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:120px"
+                       ToStringFunc="@(t => t is { } v ? LibellesExecution.TypeEngagementCourt[v] : "")">
+                @foreach (var (t, libelle) in LibellesExecution.TypeEngagementCourt)
+                {
+                    <MudSelectItem T="TypeEngagement?" Value="@t">@libelle</MudSelectItem>
+                }
+            </MudSelect>
+            <ChoixReference Label="Bénéficiaire" Elements="_tiers" Value="_filtre.TiersId" ValueChanged="ChangerTiersAsync" />
+            <MudTextField T="string" @bind-Value="_filtre.Recherche" @bind-Value:after="() => ChargerAsync(1)" Placeholder="Numéro, objet, ligne…"
+                          DebounceInterval="300" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" />
+        </div>
+    </AppCard>
+
+    <AppCard PaddingCorps="false">
+        <ChildContent>
+            @if (_lignes.Count == 0)
+            {
+                <EtatVide Icone="clipboard-list" Titre="Aucun engagement" />
+            }
+            else
+            {
+                <TableEngagements Lignes="_lignes" AvecLigne="true" />
+            }
+        </ChildContent>
+        <PiedContent>
+            <div class="flex items-center justify-between">
+                <p class="text-xs text-gray-500">@_total engagement(s)</p>
+                @if (_total > Taille)
+                {
+                    <MudPagination Count="@((int)Math.Ceiling(_total / (double)Taille))" Selected="_page" SelectedChanged="ChargerAsync" Size="Size.Small" Color="Color.Primary" />
+                }
+            </div>
+        </PiedContent>
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    private const int Taille = 20;
+
+    private IReadOnlySet<TypeDroit> _droits = new HashSet<TypeDroit>();
+    private LigneExercice? _exercice;
+    private readonly FiltrePieces _filtre = new();
+    private List<ElementListe> _tiers = new();
+    private List<LigneEngagement> _lignes = new();
+    private int _total, _page = 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _droits = await Droits.ObtenirDroitsAsync(await UserContext.ObtenirUserIdAsync());
+        if (_droits.Contains(TypeDroit.EngagementValider)) _filtre.Statut = StatutSaisie.Soumis;
+        _tiers = await ServiceTiers.ListerPourSelectionAsync();
+    }
+
+    private async Task ChangerExerciceAsync(LigneExercice? e) { _exercice = e; await ChargerAsync(1); }
+    private async Task ChangerStatutAsync(StatutSaisie? s) { _filtre.Statut = s; await ChargerAsync(1); }
+    private async Task ChangerTypeAsync(TypeEngagement? t) { _filtre.Type = t; await ChargerAsync(1); }
+    private async Task ChangerTiersAsync(Ulid? t) { _filtre.TiersId = t; await ChargerAsync(1); }
+
+    private async Task ChargerAsync(int page)
+    {
+        _page = page;
+        if (_exercice is null) return;
+        _filtre.ExerciceId = _exercice.Id;
+        (_lignes, _total) = await Service.ListerAsync(_filtre, page, Taille);
+    }
+
+    private async Task NouveauAsync()
+    {
+        var parametres = new DialogParameters<DialogEngagement>
+        {
+            { x => x.Saisie, new SaisieEngagement { Date = DateOnly.FromDateTime(DateTime.Today) } }, { x => x.ExerciceId, _exercice!.Id }
+        };
+        var dialog = await DialogService.ShowAsync<DialogEngagement>("Nouvel engagement", parametres, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false, Data: Ulid id }) Nav.NavigateTo(DetailEngagement.Lien(id));
+    }
+}

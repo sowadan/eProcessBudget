@@ -1,0 +1,45 @@
+@inject ICycleProgrammationService Cycles
+
+@*
+    Choix d'un cycle de programmation. Sans valeur, le plus récent en brouillon est proposé
+    (sinon le plus récent). Le cycle choisi est renvoyé avec son statut et ses années.
+*@
+
+@if (_cycles.Count == 0 && _charge)
+{
+    <AppAlert Variante="warning" Titre="Aucun cycle de programmation">
+        Créez d'abord un cycle dans Paramétrage › Exercices et cycles.
+    </AppAlert>
+}
+else
+{
+    <MudSelect T="Ulid?" Value="Value?.Id" ValueChanged="ChoisirAsync" Label="Cycle de programmation"
+               Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:260px"
+               ToStringFunc="@(id => _cycles.FirstOrDefault(c => c.Id == id) is { } c ? Libelle(c) : "")">
+        @foreach (var c in _cycles)
+        {
+            <MudSelectItem T="Ulid?" Value="@c.Id">@Libelle(c)</MudSelectItem>
+        }
+    </MudSelect>
+}
+
+@code {
+    [Parameter] public LigneCycle? Value { get; set; }
+    [Parameter] public EventCallback<LigneCycle?> ValueChanged { get; set; }
+
+    private List<LigneCycle> _cycles = new();
+    private bool _charge;
+
+    private static string Libelle(LigneCycle c)
+        => $"{c.Libelle} ({LibellesParametrage.De(LibellesParametrage.StatutCycle, c.Statut)})";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cycles = await Cycles.ListerAsync();
+        _charge = true;
+        if (Value is null && _cycles.Count > 0)
+            await ValueChanged.InvokeAsync(_cycles.FirstOrDefault(c => c.Statut == StatutCycle.Brouillon) ?? _cycles[0]);
+    }
+
+    private Task ChoisirAsync(Ulid? id) => ValueChanged.InvokeAsync(_cycles.FirstOrDefault(c => c.Id == id));
+}

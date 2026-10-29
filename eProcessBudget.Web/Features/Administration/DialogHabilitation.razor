@@ -1,0 +1,119 @@
+@inject IHabilitationService Habilitations
+
+@*
+    Demande d'habilitation : un bénéficiaire, un périmètre, un niveau d'accès, une période.
+    La demande part ensuite en double validation.
+*@
+
+<MudDialog>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(_erreur))
+        {
+            <div class="mb-4">
+                <AppAlert Variante="danger" Titre="Demande impossible">@_erreur</AppAlert>
+            </div>
+        }
+
+        <div class="space-y-4">
+            <MudAutocomplete T="ElementListe" @bind-Value="_beneficiaire" Label="Bénéficiaire"
+                             SearchFunc="RechercherBeneficiairesAsync" ToStringFunc="@(e => e?.Libelle)"
+                             DebounceInterval="300" MinCharacters="0" ResetValueOnEmptyText="true"
+                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                             HelperText="Nom ou identifiant d'un utilisateur actif de l'organisme." />
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <MudSelect T="TypePerimetre" Value="_demande.TypePerimetre" ValueChanged="ChangerTypeAsync"
+                           Label="Type de périmètre" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var type in Enum.GetValues<TypePerimetre>())
+                    {
+                        <MudSelectItem Value="@type">@LibellesHabilitation.Perimetre(type)</MudSelectItem>
+                    }
+                </MudSelect>
+
+                <MudSelect T="NiveauAcces" @bind-Value="_demande.NiveauAcces" Label="Niveau d'accès"
+                           Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem Value="@NiveauAcces.Lecture">Lecture</MudSelectItem>
+                    <MudSelectItem Value="@NiveauAcces.Saisie">Saisie</MudSelectItem>
+                </MudSelect>
+            </div>
+
+            @if (_demande.TypePerimetre != TypePerimetre.OrganismeEntier)
+            {
+                <MudSelect T="Ulid?" @bind-Value="_demande.PerimetreId" Label="Élément du périmètre"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="_chargementElements"
+                           HelperText="@(_elements.Count == 0 && !_chargementElements ? "Aucun élément : il se crée dans le Paramétrage ou le Budget-programme." : null)">
+                    @foreach (var e in _elements)
+                    {
+                        <MudSelectItem T="Ulid?" Value="@e.Id">@e.Libelle</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <MudDatePicker @bind-Date="_debut" Label="Début" DateFormat="dd/MM/yyyy"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudDatePicker @bind-Date="_fin" Label="Fin (facultative)" DateFormat="dd/MM/yyyy" Clearable="true"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+        </div>
+    </DialogContent>
+
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">
+            Envoyer en validation
+        </AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+
+    private readonly DemandeHabilitation _demande = new();
+    private ElementListe? _beneficiaire;
+    private List<ElementListe> _elements = new();
+    private DateTime? _debut = DateTime.Today;
+    private DateTime? _fin;
+
+    private bool _chargementElements;
+    private bool _enregistrement;
+    private string? _erreur;
+
+    private async Task<IEnumerable<ElementListe>> RechercherBeneficiairesAsync(string? texte, CancellationToken _)
+        => await Habilitations.RechercherBeneficiairesAsync(texte);
+
+    private async Task ChangerTypeAsync(TypePerimetre type)
+    {
+        _demande.TypePerimetre = type;
+        _demande.PerimetreId = null;
+        _elements = new();
+        if (type == TypePerimetre.OrganismeEntier) return;
+
+        _chargementElements = true;
+        _elements = await Habilitations.ListerElementsPerimetreAsync(type);
+        _chargementElements = false;
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _erreur = null;
+        if (_beneficiaire is null) { _erreur = "Choisissez le bénéficiaire."; return; }
+        if (_debut is null) { _erreur = "Indiquez la date de début."; return; }
+
+        _demande.UtilisateurId = _beneficiaire.Id;
+        _demande.DateDebut = DateOnly.FromDateTime(_debut.Value);
+        _demande.DateFin = _fin is null ? null : DateOnly.FromDateTime(_fin.Value);
+
+        _enregistrement = true;
+        var (ok, erreur) = await Habilitations.DemanderAsync(_demande);
+        _enregistrement = false;
+
+        if (!ok)
+        {
+            _erreur = erreur;
+            return;
+        }
+
+        Dialog.Close(DialogResult.Ok(true));
+    }
+}

@@ -1,0 +1,40 @@
+@* Relevés d'avancement physique (mois, opération, contrat, type de travaux, km, taux). *@
+
+<MudSimpleTable Dense="true" Hover="true">
+    <thead>
+        <tr>
+            <th>Mois</th>
+            @if (AvecProjet) { <th>Opération</th> }
+            <th>Type de travaux</th><th>Contrat</th><th class="text-right">Km entretenus</th><th class="text-right">Avancement</th><th>Commentaire</th><th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var a in Lignes)
+        {
+            <tr>
+                <td class="whitespace-nowrap">@a.Mois.ToString("MMMM yyyy", Formats.Francais)</td>
+                @if (AvecProjet) { <td class="text-xs"><a href="@DetailProjet.Lien(a.ProjetId)" class="hover:underline">@a.Projet</a></td> }
+                <td class="text-xs">@a.TypeTravaux</td>
+                <td class="font-mono text-xs">@a.Contrat</td>
+                <td class="tabular-nums text-right">@Formats.Nombre(a.KmRealises)</td>
+                <td class="tabular-nums text-right">@(a.TauxAvancement is { } t ? Formats.Pourcentage(t) : "—")</td>
+                <td class="text-xs text-gray-600">@a.Commentaire</td>
+                <td class="text-right whitespace-nowrap">
+                    @if (PeutSaisir)
+                    {
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => OnModifier.InvokeAsync(a)" />
+                        <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => OnSupprimer.InvokeAsync(a)" />
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<LigneAvancement> Lignes { get; set; } = [];
+    [Parameter] public bool AvecProjet { get; set; }
+    [Parameter] public bool PeutSaisir { get; set; }
+    [Parameter] public EventCallback<LigneAvancement> OnModifier { get; set; }
+    [Parameter] public EventCallback<LigneAvancement> OnSupprimer { get; set; }
+}

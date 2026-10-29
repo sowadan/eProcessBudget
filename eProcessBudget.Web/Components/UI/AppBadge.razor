@@ -1,0 +1,47 @@
+@*
+    Pastille d'état, pour qualifier une ligne de tableau ou un champ.
+
+    VARIANTES : neutral (défaut) | success | warning | danger | info | primary
+
+    EXEMPLE
+    -------
+    <AppBadge Variante="success">Validé</AppBadge>
+    <AppBadge Variante="warning" Petit="true">En attente</AppBadge>
+*@
+
+<span class="@Classes" style="@StyleInline">@ChildContent</span>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>neutral | success | warning | danger | info | primary</summary>
+    [Parameter] public string Variante { get; set; } = "neutral";
+
+    [Parameter] public bool Petit { get; set; }
+
+    private string StyleInline => Variante == "primary"
+        ? "background-color: var(--app-primaire); color: #ffffff;"
+        : "";
+
+    private string Classes
+    {
+        get
+        {
+            var taille = Petit ? "text-xs px-2 py-0.5" : "text-xs px-2.5 py-1";
+
+            var couleur = Variante switch
+            {
+                "success" => "bg-green-100 text-green-700 ring-1 ring-green-200",
+                "warning" => "bg-amber-100 text-amber-700 ring-1 ring-amber-200",
+                "danger"  => "bg-red-100 text-red-700 ring-1 ring-red-200",
+                "info"    => "bg-blue-100 text-blue-700 ring-1 ring-blue-200",
+                "primary" => "",                                  // couleur en style inline
+                _         => "bg-gray-100 text-gray-600 ring-1 ring-gray-200"
+            };
+
+            return $"inline-flex items-center rounded-full font-medium whitespace-nowrap {taille} {couleur}";
+        }
+    }
+}
+
+

@@ -1,0 +1,313 @@
+@page "/administration/utilisateurs"
+@inject IUtilisateurService UtilisateurService
+@inject IOrganismeService OrganismeService
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Utilisateurs — Administration</PageTitle>
+
+@*
+    Comptes utilisateurs et leurs profils.
+
+    Un administrateur d'organisme voit les comptes de son organisme ; un Administrateur
+    plateforme voit tous les comptes et peut filtrer par organisme. Le service applique
+    ce périmètre : la page ne fait que l'afficher.
+*@
+
+<AutoriseSi DroitsRequis="new[] { TypeDroit.UtilisateurConsultation, TypeDroit.UtilisateurGestion }">
+
+    <PageHeader Titre="Utilisateurs"
+                Description="Comptes, profils et état de connexion.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a>
+            <span>/</span>
+            <span class="text-gray-700">Administration</span>
+        </BreadcrumbContent>
+        <ActionsContent>
+            <AutoriseSi DroitsRequis="new[] { TypeDroit.UtilisateurGestion }" Discret="true">
+                <AppButton Icone="plus" OnClick="CreerAsync">Nouvel utilisateur</AppButton>
+            </AutoriseSi>
+        </ActionsContent>
+    </PageHeader>
+
+    <!-- ═══ Recherche  -->
+    <AppCard ClasseSup="mb-6">
+        <div class="flex flex-col sm:flex-row gap-3">
+            <MudTextField T="string" @bind-Value="_recherche" @bind-Value:after="RechercherAsync"
+                          Placeholder="Identifiant, nom ou e-mail…" DebounceInterval="300"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                          Class="flex-1" />
+
+            @if (_estPlateforme)
+            {
+                <MudSelect T="Ulid?" @bind-Value="_filtreOrganisme" @bind-Value:after="RechercherAsync"
+                           Label="Organisme" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                           Style="min-width:220px;">
+                    @foreach (var o in _organismes)
+                    {
+                        <MudSelectItem T="Ulid?" Value="@o.Id">@o.Libelle</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+
+            <MudSelect T="string" @bind-Value="_filtreEtat" @bind-Value:after="RechercherAsync"
+                       Label="État" Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Style="min-width:160px;">
+                <MudSelectItem Value="@("tous")">Tous</MudSelectItem>
+                <MudSelectItem Value="@("actifs")">Actifs</MudSelectItem>
+                <MudSelectItem Value="@("inactifs")">Désactivés</MudSelectItem>
+            </MudSelect>
+        </div>
+    </AppCard>
+
+    <!-- ═══ Liste  -->
+    <AppCard PaddingCorps="false">
+        <ChildContent>
+            @if (_chargement)
+            {
+                <div class="flex justify-center py-16">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                </div>
+            }
+            else if (_items.Count == 0)
+            {
+                <EtatVide Icone="users" Titre="Aucun utilisateur"
+                          Message="Aucun compte ne correspond à cette recherche." />
+            }
+            else
+            {
+                <div class="zone-defilante">
+                    <MudTable Items="_items" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Identifiant</MudTh>
+                            <MudTh>Nom et prénoms</MudTh>
+                            @if (_estPlateforme)
+                            {
+                                <MudTh>Organisme</MudTh>
+                            }
+                            else
+                            {
+                                <MudTh>Structure</MudTh>
+                            }
+                            <MudTh>Profils</MudTh>
+                            <MudTh>Dernière connexion</MudTh>
+                            <MudTh>État</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+
+                        <RowTemplate>
+                            <MudTd DataLabel="Identifiant">
+                                <span class="font-mono text-xs font-semibold text-gray-800">@context.Matricule</span>
+                            </MudTd>
+
+                            <MudTd DataLabel="Nom">
+                                <p class="text-sm text-gray-700">@context.NomPrenoms</p>
+                                <p class="text-xs text-gray-400">@(string.IsNullOrWhiteSpace(context.Email) ? context.Fonction : context.Email)</p>
+                            </MudTd>
+
+                            @if (_estPlateforme)
+                            {
+                                <MudTd DataLabel="Organisme">
+                                    @if (context.EstAdministrateurPlateforme)
+                                    {
+                                        <AppBadge Variante="warning" Petit="true">Plateforme</AppBadge>
+                                    }
+                                    else
+                                    {
+                                        <span class="font-mono text-xs text-gray-600">@context.Organisme</span>
+                                    }
+                                </MudTd>
+                            }
+                            else
+                            {
+                                <MudTd DataLabel="Structure">
+                                    <span class="text-sm text-gray-500">@(context.Structure ?? "—")</span>
+                                </MudTd>
+                            }
+
+                            <MudTd DataLabel="Profils">
+                                @if (context.Profils.Count == 0)
+                                {
+                                    <span class="text-sm text-gray-400">—</span>
+                                }
+                                else
+                                {
+                                    <div class="flex flex-wrap gap-1">
+                                        @foreach (var libelle in context.Profils)
+                                        {
+                                            <AppBadge Variante="info" Petit="true">@libelle</AppBadge>
+                                        }
+                                    </div>
+                                }
+                            </MudTd>
+
+                            <MudTd DataLabel="Dernière connexion">
+                                <span class="text-xs text-gray-500 tabular-nums">
+                                    @(context.DerniereConnexion?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "jamais")
+                                </span>
+                            </MudTd>
+
+                            <MudTd DataLabel="État">
+                                @if (context.EstBloque)
+                                {
+                                    <AppBadge Variante="danger">Bloqué</AppBadge>
+                                }
+                                else
+                                {
+                                    <AppBadge Variante="@(context.EstActif ? "success" : "neutral")">
+                                        @(context.EstActif ? "Actif" : "Désactivé")
+                                    </AppBadge>
+                                }
+                            </MudTd>
+
+                            <MudTd Style="text-align:right; white-space:nowrap;">
+                                <AutoriseSi DroitsRequis="new[] { TypeDroit.UtilisateurGestion }" Discret="true">
+                                    @if (context.EstBloque)
+                                    {
+                                        <MudTooltip Text="Débloquer">
+                                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.LockOpen"
+                                                           OnClick="() => DebloquerAsync(context)" />
+                                        </MudTooltip>
+                                    }
+                                    <MudTooltip Text="Définir un mot de passe">
+                                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Key"
+                                                       OnClick="() => DefinirMotDePasseAsync(context)" />
+                                    </MudTooltip>
+                                    <MudTooltip Text="Modifier">
+                                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit"
+                                                       OnClick="() => ModifierAsync(context)" />
+                                    </MudTooltip>
+                                </AutoriseSi>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </div>
+            }
+        </ChildContent>
+
+        <PiedContent>
+            <div class="flex items-center justify-between gap-4 flex-wrap">
+                <p class="text-xs text-gray-500">@_total utilisateur(s)</p>
+
+                @if (_total > _taille)
+                {
+                    <MudPagination Count="@((int)Math.Ceiling(_total / (double)_taille))"
+                                   Selected="_page" SelectedChanged="ChangerPageAsync"
+                                   Color="Color.Primary" Size="Size.Small" />
+                }
+            </div>
+        </PiedContent>
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    private const int _taille = 25;
+
+    private List<LigneUtilisateur> _items = new();
+    private List<ElementListe> _organismes = new();
+    private int _total;
+    private int _page = 1;
+    private bool _chargement = true;
+    private bool _estPlateforme;
+
+    private string _recherche = "";
+    private string _filtreEtat = "tous";
+    private Ulid? _filtreOrganisme;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _estPlateforme = await UserContext.EstAdministrateurPlateformeAsync();
+        if (_estPlateforme) _organismes = await OrganismeService.ListerPourSelectionAsync();
+
+        await ChargerAsync();
+    }
+
+    private async Task ChargerAsync()
+    {
+        _chargement = true;
+
+        bool? actif = _filtreEtat switch
+        {
+            "actifs"   => true,
+            "inactifs" => false,
+            _          => null
+        };
+
+        (_items, _total) = await UtilisateurService.RechercherAsync(
+            new FiltreUtilisateurs(_recherche, actif, _filtreOrganisme, _page, _taille));
+        _chargement = false;
+    }
+
+    private async Task RechercherAsync()
+    {
+        _page = 1;
+        await ChargerAsync();
+    }
+
+    private async Task ChangerPageAsync(int page)
+    {
+        _page = page;
+        await ChargerAsync();
+    }
+
+    private async Task CreerAsync()
+    {
+        var parametres = new DialogParameters<DialogUtilisateur> { { x => x.Utilisateur, new Utilisateur() } };
+
+        var dialog = await DialogService.ShowAsync<DialogUtilisateur>("Nouvel utilisateur", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var reponse = await dialog.Result;
+        if (reponse is null || reponse.Canceled) return;
+
+        Snackbar.Add("Compte créé.", Severity.Success);
+        await ChargerAsync();
+    }
+
+    private async Task ModifierAsync(LigneUtilisateur ligne)
+    {
+        // Copie fraîche, avec son RowVersion : une modification concurrente sera détectée.
+        var utilisateur = await UtilisateurService.ObtenirAsync(ligne.Id);
+        if (utilisateur is null)
+        {
+            Snackbar.Add("Utilisateur introuvable.", Severity.Error);
+            return;
+        }
+
+        var parametres = new DialogParameters<DialogUtilisateur> { { x => x.Utilisateur, utilisateur } };
+
+        var dialog = await DialogService.ShowAsync<DialogUtilisateur>(
+            $"Modifier « {utilisateur.NomPrenoms} »", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var reponse = await dialog.Result;
+        if (reponse is null || reponse.Canceled) return;
+
+        Snackbar.Add("Compte mis à jour.", Severity.Success);
+        await ChargerAsync();
+    }
+
+    private async Task DefinirMotDePasseAsync(LigneUtilisateur ligne)
+    {
+        var parametres = new DialogParameters<DialogMotDePasse>
+        {
+            { x => x.UtilisateurId, ligne.Id },
+            { x => x.NomPrenoms, ligne.NomPrenoms }
+        };
+
+        var dialog = await DialogService.ShowAsync<DialogMotDePasse>("Définir un mot de passe", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var reponse = await dialog.Result;
+        if (reponse is null || reponse.Canceled) return;
+
+        Snackbar.Add("Mot de passe défini. Communiquez-le à l'utilisateur par un canal sûr.", Severity.Success);
+        await ChargerAsync();
+    }
+
+    private async Task DebloquerAsync(LigneUtilisateur ligne)
+    {
+        var (ok, erreur) = await UtilisateurService.DebloquerAsync(ligne.Id);
+        Snackbar.Add(ok ? $"Compte de {ligne.NomPrenoms} débloqué." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync();
+    }
+}

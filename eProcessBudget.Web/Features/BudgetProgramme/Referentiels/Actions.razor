@@ -1,0 +1,19 @@
+@page "/budget-programme/actions"
+
+<PageTitle>Budget-programme</PageTitle>
+
+<PageReferentiel T="ActionProgramme" Formulaire="typeof(FormulaireActionProgramme)" Rubrique="Budget-programme" LienRubrique="/budget-programme"
+                 Description="Actions des programmes, avec leur objectif spécifique et leur structure responsable.">
+    <EnTetes>
+        <MudTh>Programme</MudTh>
+        <MudTh>Code</MudTh>
+        <MudTh>Libellé</MudTh>
+        <MudTh>Structure</MudTh>
+    </EnTetes>
+    <Colonnes>
+        <MudTd DataLabel="Programme"><span class="text-sm text-gray-500">@context.Programme.Code</span></MudTd>
+        <MudTd DataLabel="Code"><span class="font-mono text-xs font-semibold text-gray-800">@context.Code</span></MudTd>
+        <MudTd DataLabel="Libellé"><span class="text-sm text-gray-700">@context.Libelle</span></MudTd>
+        <MudTd DataLabel="Structure"><span class="text-sm text-gray-500">@(context.Structure?.Code ?? "—")</span></MudTd>
+    </Colonnes>
+</PageReferentiel>

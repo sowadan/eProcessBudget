@@ -1,0 +1,74 @@
+@*
+    Contrats et leur exécution (engagé, payé, kilomètres) tous exercices confondus.
+    Un engagé supérieur au montant du contrat est signalé : un avenant manque sans doute.
+
+    <TableContrats Lignes="_contrats" AvecProjet="true" PeutSaisir="_peutSaisir" OnModifier="EditerAsync" OnSupprimer="SupprimerAsync" />
+*@
+
+<MudSimpleTable Dense="true" Hover="true">
+    <thead>
+        <tr>
+            <th>Contrat</th>
+            @if (AvecProjet) { <th>Projet</th> }
+            <th>Type</th><th>Titulaire</th><th>Période</th>
+            <th class="text-right">Montant (avenants compris)</th><th class="text-right">Engagé</th><th class="text-right">Payé</th>
+            @if (AvecKm) { <th class="text-right">Km réalisés / contractuels</th> }
+            <th>Statut</th><th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var c in Lignes)
+        {
+            <tr>
+                <td>
+                    <span class="font-mono text-xs font-semibold">@c.Numero</span> — @c.Objet
+                    @if (c.EstPluriannuel) { <AppBadge Variante="primary" Petit="true">Pluriannuel</AppBadge> }
+                    @if (c.ContratTravaux is not null) { <div class="text-xs text-gray-500">Contrôle du contrat @c.ContratTravaux</div> }
+                </td>
+                @if (AvecProjet) { <td class="font-mono text-xs"><a href="@DetailProjet.Lien(c.ProjetId)" class="hover:underline">@c.Projet</a></td> }
+                <td class="text-xs">@(c.TypePrestation ?? LibellesAxes.TypeContrat[c.Type])</td>
+                <td class="text-xs">@c.Titulaire</td>
+                <td class="text-xs whitespace-nowrap text-gray-600">@c.DateDebut?.ToString("dd/MM/yyyy") – @c.DateFin?.ToString("dd/MM/yyyy")</td>
+                <td class="tabular-nums text-right">
+                    @Formats.Montant(c.Montant)
+                    @if (c.MontantAvenants > 0) { <div class="text-xs text-gray-500">dont avenants @Formats.Montant(c.MontantAvenants)</div> }
+                </td>
+                <td class="tabular-nums text-right @(c.EngageAuDela ? "text-red-700 font-semibold" : "")">
+                    @Formats.Montant(c.Engage)
+                    <div class="text-xs text-gray-500">@Formats.Taux(c.TauxEngagement)</div>
+                </td>
+                <td class="tabular-nums text-right">
+                    @Formats.Montant(c.Paye)
+                    <div class="text-xs text-gray-500">@Formats.Taux(c.TauxPaiement)</div>
+                </td>
+                @if (AvecKm)
+                {
+                    <td class="tabular-nums text-right">
+                        @if (c.Type == TypeContrat.Travaux)
+                        {
+                            @($"{Formats.Nombre(c.KmRealises)} / {Formats.Nombre(c.KmContractuels)}")
+                            <div class="text-xs text-gray-500">@Formats.Taux(c.TauxKm)</div>
+                        }
+                    </td>
+                }
+                <td><BadgeStatutProjet Statut="c.Statut" /></td>
+                <td class="text-right whitespace-nowrap">
+                    @if (PeutSaisir)
+                    {
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => OnModifier.InvokeAsync(c)" />
+                        <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => OnSupprimer.InvokeAsync(c)" />
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<LigneContrat> Lignes { get; set; } = [];
+    [Parameter] public bool AvecProjet { get; set; }
+    [Parameter] public bool AvecKm { get; set; }
+    [Parameter] public bool PeutSaisir { get; set; }
+    [Parameter] public EventCallback<LigneContrat> OnModifier { get; set; }
+    [Parameter] public EventCallback<LigneContrat> OnSupprimer { get; set; }
+}

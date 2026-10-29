@@ -1,0 +1,91 @@
+@inject IPrevisionRecetteService Service
+
+@*
+    Échéancier de recouvrement d'une prévision : dates et montants attendus (total ≤ prévision
+    retenue), avec leur couverture par les encaissements, dans l'ordre chronologique.
+*@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <p class="text-sm text-gray-600 mb-3">
+            Prévision retenue @Formats.Montant(Prevision.Montants.PrevisionRetenue) · encaissé @Formats.Montant(Prevision.Montants.Encaisse)
+            · échéancier @Formats.Montant(_lignes.Sum(l => l.Montant))
+        </p>
+        <MudSimpleTable Dense="true">
+            <thead><tr><th>Échéance</th><th class="text-right">Montant attendu</th><th>Couverture</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var l in _lignes)
+                {
+                    <tr>
+                        <td><ChampDate Label="" @bind-Value="l.Date" /></td>
+                        <td><MudNumericField T="decimal" @bind-Value="l.Montant" Min="0" Format="N2" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="!PeutSaisir" /></td>
+                        <td class="text-xs">
+                            @if (l.Suivi is { } s)
+                            {
+                                <AppBadge Variante="@(s.EnRetard ? "danger" : s.Couvert >= s.Attendu ? "success" : "neutral")" Petit="true">@s.Statut</AppBadge>
+                                @if (s.Couvert < s.Attendu) { <span class="text-gray-500"> reste @Formats.Montant(s.Reste)</span> }
+                            }
+                        </td>
+                        <td class="text-right">
+                            @if (PeutSaisir)
+                            {
+                                <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => _lignes.Remove(l)" />
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+        @if (PeutSaisir)
+        {
+            <div class="mt-3"><AppButton Variante="outline" Taille="sm" Icone="plus" OnClick="Ajouter">Ajouter une échéance</AppButton></div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">@(PeutSaisir ? "Annuler" : "Fermer")</AppButton>
+        @if (PeutSaisir)
+        {
+            <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter, EditorRequired] public LignePrevision Prevision { get; set; } = null!;
+    [Parameter] public bool PeutSaisir { get; set; }
+
+    private sealed class Ligne
+    {
+        public DateOnly? Date { get; set; }
+        public decimal Montant { get; set; }
+        public LigneEcheance? Suivi { get; init; }
+    }
+
+    private List<Ligne> _lignes = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+        => _lignes = (await Service.ObtenirEcheancierAsync(Prevision.Id))
+            .Select(e => new Ligne { Date = e.Date, Montant = e.Attendu, Suivi = e }).ToList();
+
+    private void Ajouter() => _lignes.Add(new Ligne { Date = DateOnly.FromDateTime(DateTime.Today) });
+
+    private async Task EnregistrerAsync()
+    {
+        if (_lignes.Any(l => l.Date is null))
+        {
+            _erreur = "Chaque échéance a une date.";
+            return;
+        }
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.DefinirEcheancierAsync(Prevision.Id, _lignes.Select(l => (l.Date!.Value, l.Montant)).ToList());
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

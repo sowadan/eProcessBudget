@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [test, main]
+  push:
+    branches: [test, main]
+
+jobs:
+  build-test:
+    name: build-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restauration
+        run: dotnet restore eProcessBudget.sln
+
+      - name: Compilation
+        run: dotnet build eProcessBudget.sln --configuration Release --no-restore
+
+      - name: Tests
+        run: dotnet test eProcessBudget.sln --configuration Release --no-build --verbosity normal

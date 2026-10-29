@@ -1,0 +1,92 @@
+@using eProcessBudget.Infrastructure.Options
+@using Microsoft.AspNetCore.Http
+@using Microsoft.Extensions.Options
+@inject IOptions<ApplicationOptions> AppOptions
+
+@*
+    Document HTML racine.
+
+    Les couleurs de la charte sont injectées ici en variables CSS, à partir de
+    appsettings.json (section Application:Couleurs). Tout le reste de l'application
+    — CSS, composants, thème MudBlazor — les consomme via var(--app-...).
+    Résultat : changer la charte ne demande AUCUNE modification de code.
+
+    Mode de rendu choisi page par page : interactif (circuit SignalR) partout, sauf pour
+    les pages marquées [ExcludeFromInteractiveRouting] — connexion, mot de passe oublié,
+    réinitialisation — rendues côté serveur, car elles posent ou lisent le cookie de
+    session au cours d'une vraie requête HTTP.
+*@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@AppOptions.Value.Nom</title>
+    <base href="/" />
+
+    <!-- Icônes : SVG pour les navigateurs récents, ICO en repli, PNG pour l'écran d'accueil iOS -->
+    <link rel="icon" href="favicon.ico" sizes="any" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta name="theme-color" content="@AppOptions.Value.Couleurs.Secondaire" />
+
+    <!-- Police -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+    @*
+        .NET 10 : @Assets[...] renvoie l'URL empreintée (fingerprint) servie par MapStaticAssets,
+        avec mise en cache longue durée et invalidation automatique à chaque déploiement.
+    *@
+    <ResourcePreloader />
+    <link href="@Assets["_content/MudBlazor/MudBlazor.min.css"]" rel="stylesheet" />
+    <link rel="stylesheet" href="@Assets["lib/driverjs/driver.css"]" />
+    <link rel="stylesheet" href="@Assets["css/app.css"]" />
+    @*
+        Tailwind figé, généré par « npm run css » (docs/07-composants-ui.md) : pas de CDN ni de
+        compilation dans le navigateur. Placé en dernier, comme l'était le style du CDN.
+    *@
+    <link rel="stylesheet" href="@Assets["css/tailwind.min.css"]" />
+
+    @* Charte injectée depuis la configuration — doit venir APRÈS app.css pour l'emporter. *@
+    <style>
+        :root {
+            --app-primaire:   @AppOptions.Value.Couleurs.Primaire;
+            --app-secondaire: @AppOptions.Value.Couleurs.Secondaire;
+            --app-tertiaire:  @AppOptions.Value.Couleurs.Tertiaire;
+            --app-accent:     @AppOptions.Value.Couleurs.Accent;
+        }
+    </style>
+
+    <ImportMap />
+    <HeadOutlet @rendermode="ModeRendu" />
+</head>
+<body>
+    @* L'adresse IP n'est connue que pendant cette requête : elle est transmise au circuit pour le journal d'audit. *@
+    <Routes @rendermode="ModeRendu" AdresseIp="@HttpContext.Connection.RemoteIpAddress?.ToString()" />
+
+    @* Affiché par blazor.web.js si le circuit s'arrête sur une erreur que la page n'a pas pu afficher. *@
+    <div id="blazor-error-ui" role="alert" data-nosnippet>
+        Une erreur inattendue a interrompu l'application.
+        <a href="" class="reload">Recharger la page</a>
+        <button type="button" class="dismiss" aria-label="Fermer ce message">×</button>
+    </div>
+
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="@Assets["_content/MudBlazor/MudBlazor.min.js"]"></script>
+    <script src="@Assets["js/session.js"]"></script>
+    <script src="@Assets["js/fichiers.js"]"></script>
+    @* Visites guidées : driver.js 1.3.6 (MIT), servi localement — voir docs/20-guide-utilisation.md *@
+    <script src="@Assets["lib/driverjs/driver.js.iife.js"]"></script>
+    <script src="@Assets["js/guide.js"]"></script>
+</body>
+</html>
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    private IComponentRenderMode? ModeRendu
+        => HttpContext.AcceptsInteractiveRouting() ? InteractiveServer : null;
+}

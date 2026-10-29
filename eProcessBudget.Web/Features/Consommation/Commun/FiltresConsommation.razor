@@ -1,0 +1,76 @@
+@inject IExerciceService Exercices
+@inject IReferentielService<Axe> ServiceAxe
+@inject IReferentielService<Programme> ServiceProgramme
+@inject IReferentielService<NatureDepense> ServiceNature
+@inject IReferentielService<SourceFinancement> ServiceSource
+@inject IReferentielService<Site> ServiceSite
+@inject IReferentielService<Structure> ServiceStructure
+
+@*
+    Filtres des vues consolidées (cahier fonctionnel § 3.11.3) : exercice, axe, programme,
+    nature de dépense, source (RI / RE), site, service, période (situation à sa date de fin).
+    Chaque changement met à jour Filtre puis déclenche OnChange.
+
+    <FiltresConsommation Filtre="_filtre" Exercice="_exercice" ExerciceChanged="..." OnChange="ChargerAsync" />
+*@
+
+<AppCard ClasseSup="mb-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <SelecteurExercice Value="Exercice" ValueChanged="ChangerExerciceAsync" />
+        <MudSelect T="Ulid?" Value="Filtre.PeriodeId" ValueChanged="v => ChangerAsync(() => Filtre.PeriodeId = v)" Label="Situation à fin de" Clearable="true"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(id => _periodes.FirstOrDefault(p => p.Id == id) is { } p ? Libelle(p) : "")"
+                   HelperText="@(Filtre.PeriodeId is null ? "Situation courante" : null)">
+            @foreach (var p in _periodes)
+            {
+                <MudSelectItem T="Ulid?" Value="@p.Id">@Libelle(p)</MudSelectItem>
+            }
+        </MudSelect>
+        <ChoixReference Label="Axe" Elements="_axes" Value="Filtre.AxeId" ValueChanged="v => ChangerAsync(() => Filtre.AxeId = v)" />
+        <ChoixReference Label="Programme" Elements="_programmes" Value="Filtre.ProgrammeId" ValueChanged="v => ChangerAsync(() => Filtre.ProgrammeId = v)" />
+        <ChoixReference Label="Nature de dépense" Elements="_natures" Value="Filtre.NatureDepenseId" ValueChanged="v => ChangerAsync(() => Filtre.NatureDepenseId = v)" />
+        <ChoixReference Label="Source de financement" Elements="_sources" Value="Filtre.SourceFinancementId" ValueChanged="v => ChangerAsync(() => Filtre.SourceFinancementId = v)" />
+        <ChoixReference Label="Site" Elements="_sites" Value="Filtre.SiteId" ValueChanged="v => ChangerAsync(() => Filtre.SiteId = v)" />
+        <ChoixReference Label="Service" Elements="_structures" Value="Filtre.StructureId" ValueChanged="v => ChangerAsync(() => Filtre.StructureId = v)" />
+    </div>
+    @if (Filtre.ProgrammeId is not null)
+    {
+        <p class="text-xs text-gray-500 mt-3">Programme filtré : seule la part des lignes qui lui revient selon les clés de répartition est retenue.</p>
+    }
+</AppCard>
+
+@code {
+    [Parameter, EditorRequired] public FiltreConsommation Filtre { get; set; } = new();
+    [Parameter] public LigneExercice? Exercice { get; set; }
+    [Parameter] public EventCallback<LigneExercice?> ExerciceChanged { get; set; }
+    [Parameter] public EventCallback OnChange { get; set; }
+
+    private List<ElementListe> _axes = new(), _programmes = new(), _natures = new(), _sources = new(), _sites = new(), _structures = new();
+    private List<LignePeriode> _periodes = new();
+
+    private static string Libelle(LignePeriode p) => LibellesConsommation.Periode(p.Type, p.Numero, p.DateDebut);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _axes = await ServiceAxe.ListerPourSelectionAsync(a => a.TypeAxe == TypeAxe.Depense);
+        _programmes = await ServiceProgramme.ListerPourSelectionAsync();
+        _natures = await ServiceNature.ListerPourSelectionAsync();
+        _sources = await ServiceSource.ListerPourSelectionAsync();
+        _sites = await ServiceSite.ListerPourSelectionAsync();
+        _structures = await ServiceStructure.ListerPourSelectionAsync();
+    }
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        Filtre.PeriodeId = null;
+        Filtre.ExerciceId = e?.Id ?? Ulid.Empty;
+        _periodes = e is null ? new() : (await Exercices.ListerPeriodesAsync(e.Id)).Where(p => p.Type != TypePeriode.Annee).ToList();
+        await ExerciceChanged.InvokeAsync(e);
+        await OnChange.InvokeAsync();
+    }
+
+    private async Task ChangerAsync(Action changer)
+    {
+        changer();
+        await OnChange.InvokeAsync();
+    }
+}

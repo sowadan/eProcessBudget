@@ -1,0 +1,43 @@
+# Sorties de compilation .NET
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+TestResults/
+*.trx
+coverage*.xml
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.rsuser
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Outillage front (wwwroot/css/tailwind.min.css reste versionné : voir docs/07-composants-ui.md)
+node_modules/
+
+# Secrets et configuration locale : jamais dans le dépôt (voir docs/03-configuration.md)
+.env
+.env.*
+secrets.json
+appsettings.*.local.json
+*.pfx
+*.p12
+
+# Bases locales et publications
+*.mdf
+*.ldf
+*.bak
+publish/
+*.pubxml.user
+
+# Fichiers temporaires Office et système
+~$*
+Thumbs.db
+Desktop.ini
+.DS_Store

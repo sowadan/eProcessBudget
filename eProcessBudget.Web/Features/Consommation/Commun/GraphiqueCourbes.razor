@@ -1,0 +1,17 @@
+@*
+    Courbes (évolution chronologique) : une série par grandeur, une étiquette par période.
+
+    <GraphiqueCourbes Etiquettes="_etiquettes" Series="_series" />
+*@
+
+<MudChart T="double" ChartType="ChartType.Line" ChartSeries="@_series" ChartLabels="@Etiquettes" Width="100%" Height="300px" />
+
+@code {
+    [Parameter, EditorRequired] public string[] Etiquettes { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<(string Nom, double[] Valeurs)> Series { get; set; } = [];
+
+    private List<ChartSeries<double>> _series = new();
+
+    protected override void OnParametersSet()
+        => _series = Series.Select(s => new ChartSeries<double> { Name = s.Nom, Data = s.Valeurs }).ToList();
+}

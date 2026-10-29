@@ -1,0 +1,28 @@
+@inject NavigationManager Nav
+
+@* Paiements (ou versements d'appuis) : un clic ouvre la fiche de l'engagement payé. *@
+
+<MudSimpleTable Dense="true" Hover="true">
+    <thead>
+        <tr><th>Pièce</th><th>Date</th><th>Engagement</th><th>Objet</th><th>Bénéficiaire</th><th>Mode</th><th class="text-right">Montant</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var p in Lignes)
+        {
+            <tr class="cursor-pointer @(p.Statut == StatutSaisie.Annule ? "line-through text-gray-400" : "")"
+                @onclick="@(() => Nav.NavigateTo($"/execution/engagements/{p.EngagementId}"))">
+                <td class="font-mono text-xs">@p.NumeroPiece</td>
+                <td class="whitespace-nowrap">@p.Date.ToString("dd/MM/yyyy")</td>
+                <td class="font-mono text-xs">@p.Engagement</td>
+                <td>@p.Objet</td>
+                <td class="text-xs text-gray-600">@p.Beneficiaire</td>
+                <td class="text-xs">@LibellesExecution.ModePaiement[p.Mode]</td>
+                <td class="tabular-nums text-right">@Formats.Montant(p.Montant)</td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<LignePaiement> Lignes { get; set; } = [];
+}

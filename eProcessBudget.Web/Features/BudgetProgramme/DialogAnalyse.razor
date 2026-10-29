@@ -1,0 +1,54 @@
+@inject IAnalyseService Service
+@inject IReferentielService<Programme> ServiceProgramme
+@inject IReferentielService<Rubrique> ServiceRubrique
+
+@* Analyse qualitative : type, programme (facultatif), rubrique (commentaire de rubrique), texte. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <ChoixEnum TEnum="TypeAnalyse" Label="Type" Libelles="LibellesBudgetProgramme.Analyse" @bind-Value="Saisie.Type" />
+            <ChoixReference Label="Programme (facultatif)" Elements="_programmes" Value="Saisie.ProgrammeId" ValueChanged="v => Saisie.ProgrammeId = v" />
+            @if (Saisie.Type == TypeAnalyse.CommentaireRubrique)
+            {
+                <div class="sm:col-span-2">
+                    <ChoixReference Label="Rubrique commentée" Elements="_rubriques" Obligatoire="true" Value="Saisie.RubriqueId" ValueChanged="v => Saisie.RubriqueId = v" />
+                </div>
+            }
+            <MudTextField @bind-Value="Saisie.Contenu" Label="Texte" Lines="8" MaxLength="20000" Counter="20000"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+            <MudNumericField T="int" @bind-Value="Saisie.Ordre" Label="Ordre d'affichage" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public SaisieAnalyse Saisie { get; set; } = new();
+
+    private List<ElementListe> _programmes = new(), _rubriques = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _programmes = await ServiceProgramme.ListerPourSelectionAsync();
+        _rubriques = await ServiceRubrique.ListerPourSelectionAsync();
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.EnregistrerAsync(Saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

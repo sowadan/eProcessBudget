@@ -1,0 +1,131 @@
+@page "/compte/connexion"
+@layout CompteLayout
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@using Microsoft.Extensions.Options
+@inject IAuthentificationService Authentification
+@inject NavigationManager Nav
+@inject IOptions<ApplicationOptions> AppOptions
+
+<PageTitle>Connexion — @AppOptions.Value.Nom</PageTitle>
+
+@*
+    Connexion par identifiant et mot de passe (cahier fonctionnel § 3.1.2).
+
+    Rendu côté serveur : le formulaire est une vraie requête POST, la seule qui puisse
+    poser le cookie de session. Les erreurs ne disent jamais si l'identifiant existe.
+*@
+
+<h1 class="text-xl font-bold text-gray-800">Connexion</h1>
+<p class="text-sm text-gray-500 mt-1 mb-6">Identifiez-vous pour accéder à votre espace.</p>
+
+@if (_erreur is not null)
+{
+    <div role="alert" class="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        @_erreur
+    </div>
+}
+else if (MessageMotif is { } message)
+{
+    <div role="status" class="mb-5 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+        @message
+    </div>
+}
+
+<EditForm Model="Saisie" method="post" OnValidSubmit="ConnecterAsync" FormName="connexion" novalidate>
+    <DataAnnotationsValidator />
+
+    <div class="space-y-4">
+        <div>
+            <label for="identifiant" class="block text-sm font-medium text-gray-700 mb-1">Identifiant ou e-mail</label>
+            <InputText id="identifiant" @bind-Value="Saisie!.Identifiant" autocomplete="username" autofocus
+                       maxlength="150" class="champ-compte" />
+            <ValidationMessage For="() => Saisie!.Identifiant" class="text-xs text-red-600 mt-1" />
+        </div>
+
+        <div>
+            <div class="flex items-center justify-between mb-1">
+                <label for="motdepasse" class="block text-sm font-medium text-gray-700">Mot de passe</label>
+                <a href="/compte/mot-de-passe-oublie" class="text-xs font-medium hover:underline"
+                   style="color: var(--app-primaire);">Mot de passe oublié ?</a>
+            </div>
+            <InputText id="motdepasse" type="password" @bind-Value="Saisie!.MotDePasse"
+                       autocomplete="current-password" maxlength="128" class="champ-compte" />
+            <ValidationMessage For="() => Saisie!.MotDePasse" class="text-xs text-red-600 mt-1" />
+        </div>
+
+        <button type="submit" class="bouton-compte">Se connecter</button>
+    </div>
+</EditForm>
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "connexion")]
+    private SaisieConnexion? Saisie { get; set; }
+
+    [SupplyParameterFromQuery(Name = ConfigurationSecurite.ParametreRetour)]
+    private string? Retour { get; set; }
+
+    [SupplyParameterFromQuery(Name = "motif")]
+    private string? Motif { get; set; }
+
+    private string? _erreur;
+
+    private string? MessageMotif => Motif switch
+    {
+        "inactivite"   => "Votre session a été fermée après une période d'inactivité. Reconnectez-vous.",
+        "expiree"      => "Votre session a pris fin. Reconnectez-vous pour continuer.",
+        "deconnexion"  => "Vous êtes déconnecté.",
+        "motdepasse"   => "Votre mot de passe a été modifié. Reconnectez-vous avec le nouveau.",
+        "reinitialise" => "Votre mot de passe a été réinitialisé. Vous pouvez vous connecter.",
+        _ => null
+    };
+
+    protected override void OnInitialized()
+    {
+        Saisie ??= new SaisieConnexion();
+
+        // Déjà connecté : inutile de revoir le formulaire.
+        if (HttpMethods.IsGet(HttpContext.Request.Method) && HttpContext.User.Identity?.IsAuthenticated == true)
+            Nav.NavigateTo(UrlRetour());
+    }
+
+    private async Task ConnecterAsync()
+    {
+        var resultat = await Authentification.ConnecterAsync(
+            Saisie!.Identifiant, Saisie.MotDePasse,
+            HttpContext.Connection.RemoteIpAddress?.ToString() ?? "inconnue",
+            HttpContext.Request.Headers.UserAgent.ToString());
+
+        if (!resultat.Ok)
+        {
+            _erreur = resultat.Erreur;
+            Saisie.MotDePasse = string.Empty;   // jamais renvoyé dans la page
+            return;
+        }
+
+        var maintenant = DateTimeOffset.UtcNow;
+        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, resultat.Principal!,
+            new AuthenticationProperties
+            {
+                // Cookie de session (supprimé à la fermeture du navigateur), à expiration
+                // glissante : la durée fixée ici est conservée à chaque renouvellement.
+                IsPersistent = false,
+                AllowRefresh = true,
+                IssuedUtc    = maintenant,
+                ExpiresUtc   = maintenant + resultat.DureeSession
+            });
+
+        Nav.NavigateTo(UrlRetour());
+    }
+
+    /// <summary>Adresse de retour, uniquement locale : jamais de redirection vers un autre site.</summary>
+    private string UrlRetour()
+        => Retour is { Length: > 0 } url && url[0] == '/' && (url.Length == 1 || (url[1] != '/' && url[1] != '\\'))
+           && !url.StartsWith("/compte/", StringComparison.OrdinalIgnoreCase)
+            ? url
+            : "/";
+}

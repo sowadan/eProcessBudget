@@ -1,0 +1,154 @@
+@page "/axes/investissements/inventaire"
+@inject IImmobilisationService Service
+@inject IReferentielService<Site> ServiceSite
+@inject IReferentielService<Structure> ServiceStructure
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Inventaire — Axes de dépenses</PageTitle>
+
+@*
+    Inventaire des immobilisations et équipements par site (cahier fonctionnel § 3.6.2) :
+    chaque bien a son site, son compte d'immobilisation et, le cas échéant, le projet
+    d'investissement qui l'a acquis.
+*@
+
+<AutoriseSi DroitsRequis="Axe.Lecture">
+    <PageHeader Titre="Inventaire des immobilisations" Description="Biens et équipements par site, notamment les postes de péage et de pesage.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><a href="@RoutesAxes.Investissements" class="hover:underline">Investissements</a>
+        </BreadcrumbContent>
+        <ActionsContent>
+            @if (_peutSaisir)
+            {
+                <AppButton Icone="plus" OnClick="() => EditerAsync(null)">Nouveau bien</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    @if (_parSite.Count > 0)
+    {
+        <AppCard ClasseSup="mb-4" Titre="Par site" SousTitre="Biens en service ou hors service (hors biens cédés ou réformés). Un clic filtre la liste.">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                @foreach (var s in _parSite)
+                {
+                    <button type="button" class="text-left rounded-lg border p-3 hover:bg-gray-50 @(_filtre.SiteId == s.SiteId ? "border-blue-500 ring-1 ring-blue-500" : "border-gray-200")"
+                            @onclick="() => FiltrerAsync(() => _filtre.SiteId = _filtre.SiteId == s.SiteId ? null : s.SiteId)">
+                        <p class="font-medium text-gray-900">@s.Site</p>
+                        <p class="text-xs text-gray-500">@LibellesParametrage.De(LibellesParametrage.TypeSite, s.TypeSite)</p>
+                        <p class="tabular-nums mt-1">@Formats.Montant(s.Valeur)</p>
+                        <p class="text-xs text-gray-500">@s.NbBiens bien(s)@(s.NbHorsService > 0 ? $" · {s.NbHorsService} hors service" : "")</p>
+                    </button>
+                }
+            </div>
+        </AppCard>
+    }
+
+    <AppCard ClasseSup="mb-4">
+        <div class="flex flex-col lg:flex-row gap-3">
+            <MudTextField T="string" @bind-Value="_filtre.Recherche" @bind-Value:after="() => ChargerAsync(1)" Placeholder="Code ou désignation…"
+                          DebounceInterval="300" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" />
+            <ChoixReference Label="Site" Elements="_sites" Value="_filtre.SiteId" ValueChanged="v => FiltrerAsync(() => _filtre.SiteId = v)" />
+            <ChoixReference Label="Service" Elements="_structures" Value="_filtre.StructureId" ValueChanged="v => FiltrerAsync(() => _filtre.StructureId = v)" />
+            <MudSelect T="EtatImmobilisation?" Value="_filtre.Etat" ValueChanged="v => FiltrerAsync(() => _filtre.Etat = v)" Label="État" Clearable="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(e => e is { } v ? LibellesAxes.EtatImmobilisation[v] : "")">
+                @foreach (var (valeur, libelle) in LibellesAxes.EtatImmobilisation)
+                {
+                    <MudSelectItem T="EtatImmobilisation?" Value="@valeur">@libelle</MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+    </AppCard>
+
+    <AppCard PaddingCorps="false">
+        <ChildContent>
+            @if (_lignes.Count == 0)
+            {
+                <EtatVide Icone="office-building" Titre="Aucun bien inventorié" />
+            }
+            else
+            {
+                <TableImmobilisations Lignes="_lignes" PeutSaisir="_peutSaisir" OnModifier="EditerAsync" OnSupprimer="SupprimerAsync" />
+            }
+        </ChildContent>
+        <PiedContent>
+            <div class="flex items-center justify-between">
+                <p class="text-xs text-gray-500">@_total bien(s) · valeur d'acquisition @Formats.Montant(_valeur)</p>
+                @if (_total > Taille)
+                {
+                    <MudPagination Count="@((int)Math.Ceiling(_total / (double)Taille))" Selected="_page" SelectedChanged="ChargerAsync" Size="Size.Small" Color="Color.Primary" />
+                }
+            </div>
+        </PiedContent>
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    private const int Taille = 20;
+    private static readonly AxeDepense Axe = AxesDepense.Investissement;
+
+    private readonly FiltreImmobilisations _filtre = new();
+    private List<LigneImmobilisation> _lignes = new();
+    private List<InventaireSite> _parSite = new();
+    private List<ElementListe> _sites = new(), _structures = new();
+    private int _total, _page = 1;
+    private decimal _valeur;
+    private bool _peutSaisir;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutSaisir = (await Droits.ObtenirDroitsAsync(await UserContext.ObtenirUserIdAsync())).Contains(Axe.DroitSaisir);
+        _sites = await ServiceSite.ListerPourSelectionAsync();
+        _structures = await ServiceStructure.ListerPourSelectionAsync();
+        await RechargerAsync();
+    }
+
+    private async Task RechargerAsync()
+    {
+        _parSite = await Service.ParSiteAsync();
+        await ChargerAsync(_page);
+    }
+
+    private async Task FiltrerAsync(Action changer)
+    {
+        changer();
+        await ChargerAsync(1);
+    }
+
+    private async Task ChargerAsync(int page)
+    {
+        _page = page;
+        (_lignes, _total, _valeur) = await Service.ListerAsync(_filtre, page, Taille);
+    }
+
+    private async Task EditerAsync(LigneImmobilisation? i)
+    {
+        var saisie = i is null ? new SaisieImmobilisation { SiteId = _filtre.SiteId } : await Service.ObtenirSaisieAsync(i.Id);
+        if (saisie is null) return;
+        var parametres = new DialogParameters<DialogImmobilisation> { { x => x.Saisie, saisie } };
+        var dialog = await DialogService.ShowAsync<DialogImmobilisation>(i is null ? "Nouveau bien" : $"Modifier {i.Code}", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Bien enregistré.", Severity.Success);
+            await RechargerAsync();
+        }
+    }
+
+    private async Task SupprimerAsync(LigneImmobilisation i)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, "Supprimer le bien" },
+            { x => x.Message, $"Le bien {i.Code} est retiré de l'inventaire (suppression logique). Pour un bien cédé ou réformé, changez plutôt son état." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+        var (ok, erreur) = await Service.SupprimerAsync(i.Id);
+        Snackbar.Add(ok ? "Bien supprimé." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await RechargerAsync();
+    }
+}

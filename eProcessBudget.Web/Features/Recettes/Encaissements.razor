@@ -1,0 +1,269 @@
+@page "/recettes/encaissements"
+@inject IEncaissementService Service
+@inject IReferentielService<Site> ServiceSite
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Encaissements — Recettes</PageTitle>
+
+@*
+    Saisie mensuelle des recettes collectées (cahier fonctionnel § 3.9.2 et 4.2) : grille
+    prévision × mois de l'exercice, et journal des encaissements. Un encaissement se corrige
+    tant que son mois n'est pas clos.
+*@
+
+<AutoriseSi DroitsRequis="AccesRecettes.Lecture">
+    <PageHeader Titre="Encaissements" Description="Recettes collectées, mois par mois, par nature et par poste.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><a href="/recettes" class="hover:underline">Recettes</a>
+        </BreadcrumbContent>
+        <ActionsContent>
+            @if (Saisissable)
+            {
+                <AppButton Icone="plus" OnClick="() => EditerAsync(null)">Nouvel encaissement</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <div class="flex flex-col lg:flex-row gap-3">
+            <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+            <MudSelect T="CategorieRecette?" Value="_filtreGrille.Categorie" ValueChanged="v => FiltrerAsync(() => { _filtreGrille.Categorie = v; _filtre.Categorie = v; })" Label="Catégorie" Clearable="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(c => c is { } v ? LibellesParametrage.De(LibellesParametrage.CategorieRecette, v) : "")">
+                @foreach (var (valeur, libelle) in LibellesParametrage.CategorieRecette.Where(c => c.Key != CategorieRecette.ReportRessourcesAnterieures))
+                {
+                    <MudSelectItem T="CategorieRecette?" Value="@valeur">@libelle</MudSelectItem>
+                }
+            </MudSelect>
+            <ChoixReference Label="Site" Elements="_sites" Value="_filtreGrille.SiteId" ValueChanged="v => FiltrerAsync(() => { _filtreGrille.SiteId = v; _filtre.SiteId = v; })" />
+        </div>
+        @if (_exercice is { Statut: not StatutExercice.Ouvert })
+        {
+            <p class="text-xs text-gray-500 mt-3">Les encaissements se saisissent sur un exercice ouvert.</p>
+        }
+    </AppCard>
+
+    @if (_exercice is not null)
+    {
+        <MudTabs @bind-ActivePanelIndex="_onglet" Elevation="0" Rounded="true" TabPanelsClass="pt-4">
+            <MudTabPanel Text="Grille mensuelle">
+                <AppCard PaddingCorps="false" Titre="Encaissé par prévision et par mois" SousTitre="Un clic sur une ligne ouvre ses encaissements dans le journal.">
+                    @if (_grille.Count == 0)
+                    {
+                        <EtatVide Icone="cash" Titre="Aucune prévision" Message="Les encaissements portent sur les prévisions de l'exercice." />
+                    }
+                    else
+                    {
+                        <div class="overflow-x-auto">
+                            <MudSimpleTable Dense="true" Hover="true">
+                                <thead>
+                                    <tr>
+                                        <th class="sticky left-0 bg-white">Prévision</th>
+                                        @foreach (var m in _mois) { <th class="text-right capitalize">@m.DateDebut.ToString("MMM", Formats.Francais)</th> }
+                                        <th class="text-right">Total</th><th class="text-right">Prévu</th><th class="text-right">Taux</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var l in _grille)
+                                    {
+                                        <tr class="cursor-pointer" @onclick="() => OuvrirJournalAsync(l.PrevisionId)">
+                                            <td class="sticky left-0 bg-white text-xs whitespace-nowrap">
+                                                <span class="font-mono font-semibold">@l.LigneCode</span> @l.Nature
+                                                @if (l.Site is not null) { <span class="text-gray-500">· @l.Site</span> }
+                                            </td>
+                                            @for (var i = 0; i < _mois.Count && i < 12; i++)
+                                            {
+                                                <td class="tabular-nums text-right text-xs @(l.Mois[i] == 0 ? "text-gray-300" : "")">@Formats.Nombre(l.Mois[i])</td>
+                                            }
+                                            <td class="tabular-nums text-right text-xs font-semibold">@Formats.Montant(l.Total)</td>
+                                            <td class="tabular-nums text-right text-xs text-gray-600">@Formats.Montant(l.PrevisionRetenue)</td>
+                                            <td class="tabular-nums text-right text-xs">@Formats.Taux(l.TauxRecouvrement)</td>
+                                        </tr>
+                                    }
+                                    <tr class="font-semibold bg-gray-50">
+                                        <td class="sticky left-0 bg-gray-50">Total</td>
+                                        @for (var i = 0; i < _mois.Count && i < 12; i++) { <td class="tabular-nums text-right text-xs">@Formats.Nombre(_totauxMois[i])</td> }
+                                        <td class="tabular-nums text-right text-xs">@Formats.Montant(_grille.Sum(l => l.Total))</td>
+                                        <td class="tabular-nums text-right text-xs">@Formats.Montant(_grille.Sum(l => l.PrevisionRetenue))</td>
+                                        <td class="tabular-nums text-right text-xs">@Formats.Taux(CalculsExecution.Taux(_grille.Sum(l => l.Total), _grille.Sum(l => l.PrevisionRetenue)))</td>
+                                    </tr>
+                                </tbody>
+                            </MudSimpleTable>
+                        </div>
+                    }
+                </AppCard>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Journal">
+                <AppCard PaddingCorps="false">
+                    <TitreContent>
+                        <div class="flex flex-col lg:flex-row gap-3 w-full">
+                            <MudTextField T="string" @bind-Value="_filtre.Recherche" @bind-Value:after="() => ChargerJournalAsync(1)" Placeholder="Référence, ligne, nature…"
+                                          DebounceInterval="300" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" />
+                            <MudSelect T="Ulid?" Value="_filtre.PeriodeId" ValueChanged="v => FiltrerJournalAsync(() => _filtre.PeriodeId = v)" Label="Mois" Clearable="true"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(id => _mois.FirstOrDefault(m => m.Id == id)?.DateDebut.ToString("MMMM yyyy", Formats.Francais) ?? "")">
+                                @foreach (var m in _mois) { <MudSelectItem T="Ulid?" Value="@m.Id">@m.DateDebut.ToString("MMMM yyyy", Formats.Francais)</MudSelectItem> }
+                            </MudSelect>
+                            <MudSelect T="bool?" Value="_filtre.EstPositionne" ValueChanged="v => FiltrerJournalAsync(() => _filtre.EstPositionne = v)" Label="Positionnement" Clearable="true"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(b => b is null ? "" : b.Value ? "Positionnés" : "Non positionnés")">
+                                <MudSelectItem T="bool?" Value="true">Positionnés</MudSelectItem>
+                                <MudSelectItem T="bool?" Value="false">Non positionnés</MudSelectItem>
+                            </MudSelect>
+                            @if (_filtre.PrevisionRecetteId is not null)
+                            {
+                                <AppButton Variante="ghost" Taille="sm" Icone="x" OnClick="() => FiltrerJournalAsync(() => _filtre.PrevisionRecetteId = null)">Toutes les prévisions</AppButton>
+                            }
+                        </div>
+                    </TitreContent>
+                    <ChildContent>
+                        @if (_journal.Count == 0)
+                        {
+                            <EtatVide Icone="cash" Titre="Aucun encaissement" />
+                        }
+                        else
+                        {
+                            <MudSimpleTable Dense="true" Hover="true">
+                                <thead><tr><th>Date</th><th>Prévision</th><th>Référence</th><th>Compte</th><th class="text-right">Montant</th><th></th></tr></thead>
+                                <tbody>
+                                    @foreach (var e in _journal)
+                                    {
+                                        <tr>
+                                            <td class="whitespace-nowrap">@e.Date.ToString("dd/MM/yyyy")</td>
+                                            <td class="text-xs">@e.Prevision</td>
+                                            <td class="font-mono text-xs">@e.Reference</td>
+                                            <td class="text-xs">
+                                                @if (e.EstPositionne) { @e.Compte }
+                                                else { <AppBadge Variante="warning" Petit="true">Non positionné</AppBadge> }
+                                            </td>
+                                            <td class="tabular-nums text-right">@Formats.Montant(e.Montant)</td>
+                                            <td class="text-right whitespace-nowrap">
+                                                @if (Saisissable && !MoisClos(e.Mois))
+                                                {
+                                                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditerAsync(e)" />
+                                                    <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerAsync(e)" />
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        }
+                    </ChildContent>
+                    <PiedContent>
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs text-gray-500">@_totalJournal encaissement(s) · total @Formats.Montant(_montantJournal)</p>
+                            @if (_totalJournal > Taille)
+                            {
+                                <MudPagination Count="@((int)Math.Ceiling(_totalJournal / (double)Taille))" Selected="_page" SelectedChanged="ChargerJournalAsync" Size="Size.Small" Color="Color.Primary" />
+                            }
+                        </div>
+                    </PiedContent>
+                </AppCard>
+            </MudTabPanel>
+        </MudTabs>
+    }
+</AutoriseSi>
+
+@code {
+    private const int Taille = 20;
+
+    [Inject] private IExerciceService Exercices { get; set; } = null!;
+
+    private readonly FiltrePrevisions _filtreGrille = new();
+    private readonly FiltreEncaissements _filtre = new();
+    private LigneExercice? _exercice;
+    private List<LignePeriode> _mois = new();
+    private List<LigneGrille> _grille = new();
+    private decimal[] _totauxMois = new decimal[12];
+    private List<LigneEncaissement> _journal = new();
+    private List<ElementListe> _sites = new();
+    private int _onglet, _page = 1, _totalJournal;
+    private decimal _montantJournal;
+    private bool _peutSaisir;
+
+    private bool Saisissable => _peutSaisir && _exercice is { Statut: StatutExercice.Ouvert };
+    private bool MoisClos(int numero) => _mois.FirstOrDefault(m => m.Numero == numero)?.EstCloturee == true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutSaisir = (await Droits.ObtenirDroitsAsync(await UserContext.ObtenirUserIdAsync())).Contains(TypeDroit.EncaissementSaisir);
+        _sites = await ServiceSite.ListerPourSelectionAsync();
+    }
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        _filtre.PeriodeId = null;
+        _filtre.PrevisionRecetteId = null;
+        if (e is null) return;
+        _mois = (await Exercices.ListerPeriodesAsync(e.Id)).Where(p => p.Type == TypePeriode.Mois).ToList();
+        await ChargerToutAsync();
+    }
+
+    private async Task ChargerToutAsync()
+    {
+        if (_exercice is null) return;
+        _filtreGrille.ExerciceId = _exercice.Id;
+        (_grille, _totauxMois) = await Service.GrilleAsync(_filtreGrille);
+        await ChargerJournalAsync(1);
+    }
+
+    private async Task FiltrerAsync(Action changer)
+    {
+        changer();
+        await ChargerToutAsync();
+    }
+
+    private async Task FiltrerJournalAsync(Action changer)
+    {
+        changer();
+        await ChargerJournalAsync(1);
+    }
+
+    private async Task ChargerJournalAsync(int page)
+    {
+        _page = page;
+        if (_exercice is null) return;
+        _filtre.ExerciceId = _exercice.Id;
+        (_journal, _totalJournal, _montantJournal) = await Service.ListerAsync(_filtre, page, Taille);
+    }
+
+    private async Task OuvrirJournalAsync(Ulid previsionId)
+    {
+        _filtre.PrevisionRecetteId = previsionId;
+        _onglet = 1;
+        await ChargerJournalAsync(1);
+    }
+
+    private async Task EditerAsync(LigneEncaissement? e)
+    {
+        var saisie = e is null
+            ? new SaisieEncaissement { PrevisionRecetteId = _filtre.PrevisionRecetteId, Date = DateOnly.FromDateTime(DateTime.Today) }
+            : await Service.ObtenirSaisieAsync(e.Id);
+        if (saisie is null) return;
+        var parametres = new DialogParameters<DialogEncaissement> { { x => x.Saisie, saisie }, { x => x.ExerciceId, _exercice!.Id } };
+        var dialog = await DialogService.ShowAsync<DialogEncaissement>(e is null ? "Nouvel encaissement" : "Modifier l'encaissement", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Encaissement enregistré.", Severity.Success);
+            await ChargerToutAsync();
+        }
+    }
+
+    private async Task SupprimerAsync(LigneEncaissement e)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, "Supprimer l'encaissement" }, { x => x.Message, $"L'encaissement du {e.Date:dd/MM/yyyy} ({Formats.Montant(e.Montant)}) est supprimé." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+        var (ok, erreur) = await Service.SupprimerAsync(e.Id);
+        Snackbar.Add(ok ? "Encaissement supprimé." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerToutAsync();
+    }
+}

@@ -1,0 +1,37 @@
+@inherits FormulaireBase<Activite>
+@inject IReferentielService<ActionProgramme> ServiceAction
+@inject IReferentielService<Structure> ServiceStructure
+@inject IReferentielService<NatureDepense> ServiceNature
+
+@* Activité : action de rattachement, code, libellé, structure responsable, nature de dépense principale. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div class="sm:col-span-2">
+        <ChoixReference Label="Action" Elements="_actions" Obligatoire="true"
+                        Value="Element.ActionId" ValueChanged="v => Element.ActionId = v ?? Ulid.Empty" />
+    </div>
+    <MudTextField @bind-Value="Element.Code" Label="Code" MaxLength="15" Required="true" RequiredError="Code : obligatoire."
+                  HelperText="1.1.1…" Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Libelle" Label="Libellé" MaxLength="250" Required="true" RequiredError="Libellé : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-3" />
+    <div class="sm:col-span-2">
+        <ChoixReference Label="Structure responsable" Elements="_structures" Value="Element.StructureId" ValueChanged="v => Element.StructureId = v" />
+    </div>
+    <ChoixReference Label="Nature de dépense principale" Elements="_natures"
+                    Value="Element.NatureDepensePrincipaleId" ValueChanged="v => Element.NatureDepensePrincipaleId = v" />
+    <MudTextField @bind-Value="Element.Description" Label="Description" MaxLength="1000" Lines="3"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-3" />
+</div>
+
+@code {
+    private List<ElementListe> _actions = new();
+    private List<ElementListe> _structures = new();
+    private List<ElementListe> _natures = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _actions = await ServiceAction.ListerPourSelectionAsync();
+        _structures = await ServiceStructure.ListerPourSelectionAsync();
+        _natures = await ServiceNature.ListerPourSelectionAsync();
+    }
+}

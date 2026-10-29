@@ -1,0 +1,12 @@
+{
+  "name": "eprocessbudget-web",
+  "private": true,
+  "description": "Outillage front : génération de wwwroot/css/tailwind.min.css (voir docs/07-composants-ui.md).",
+  "scripts": {
+    "css": "tailwindcss -i Styles/tailwind.source.css -o wwwroot/css/tailwind.min.css --minify",
+    "css:watch": "tailwindcss -i Styles/tailwind.source.css -o wwwroot/css/tailwind.min.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.19"
+  }
+}

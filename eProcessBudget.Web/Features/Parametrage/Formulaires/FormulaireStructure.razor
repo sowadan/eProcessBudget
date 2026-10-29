@@ -1,0 +1,32 @@
+@inherits FormulaireBase<Structure>
+@inject IReferentielService<ListeValeur> ServiceListeValeur
+@inject IReferentielService<Structure> ServiceStructure
+
+@* Formulaire de saisie : Structure. Généré à l'identique pour tous les référentiels ; les règles sont dans CatalogueReferentiels. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <MudTextField @bind-Value="Element.Code" Label="Code" MaxLength="20" Required="true" RequiredError="Code : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Sigle" Label="Sigle" MaxLength="20"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Libelle" Label="Libellé" MaxLength="200" Required="true" RequiredError="Libellé : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+    <div><ChoixReference Label="Type" Elements="_types"
+                    Value="Element.TypeStructureId" ValueChanged="v => Element.TypeStructureId = v" /></div>
+    <div><ChoixReference Label="Structure de rattachement" Elements="_structures"
+                    Value="Element.StructureParentId" ValueChanged="v => Element.StructureParentId = v" /></div>
+    <MudTextField @bind-Value="Element.ResponsableNom" Label="Responsable" MaxLength="150"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+</div>
+
+@code {
+    private List<ElementListe> _types = new();
+    private List<ElementListe> _structures = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _types = await ServiceListeValeur.ListerPourSelectionAsync(l => l.Categorie == CategoriesListeValeur.TypeStructure);
+        _structures = await ServiceStructure.ListerPourSelectionAsync();
+        _structures.RemoveAll(e => e.Id == Element.Id);
+    }
+}

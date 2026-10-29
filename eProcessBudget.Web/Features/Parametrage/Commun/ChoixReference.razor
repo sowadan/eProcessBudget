@@ -1,0 +1,42 @@
+@*
+    Sélecteur d'une référence (axe, structure, compte...) parmi des ElementListe.
+
+    <ChoixReference Label="Axe" Elements="_axes" Obligatoire="true"
+                    Value="Element.AxeId" ValueChanged="v => Element.AxeId = v ?? Ulid.Empty" />
+
+    Une valeur déjà enregistrée mais absente de la liste (élément devenu inactif) reste
+    affichée, marquée « (inactif) », pour ne pas perdre la saisie existante.
+*@
+
+<MudSelect T="Ulid?" Value="ValeurAffichee" ValueChanged="ValueChanged" Label="@Label"
+           Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="@(!Obligatoire)"
+           Required="Obligatoire" RequiredError="@($"{Label} : choix obligatoire.")"
+           HelperText="@HelperText" Disabled="Disabled" AnchorOrigin="Origin.BottomCenter"
+           ToStringFunc="Libelle">
+    @foreach (var e in Elements)
+    {
+        <MudSelectItem T="Ulid?" Value="@e.Id">@e.Libelle</MudSelectItem>
+    }
+    @if (ValeurInconnue)
+    {
+        <MudSelectItem T="Ulid?" Value="@Value" Disabled="true">(inactif)</MudSelectItem>
+    }
+</MudSelect>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public IReadOnlyList<ElementListe> Elements { get; set; } = [];
+    [Parameter] public Ulid? Value { get; set; }
+    [Parameter] public EventCallback<Ulid?> ValueChanged { get; set; }
+    [Parameter] public bool Obligatoire { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? HelperText { get; set; }
+
+    /// <summary>Ulid.Empty (référence obligatoire pas encore choisie) s'affiche comme « rien ».</summary>
+    private Ulid? ValeurAffichee => Value == Ulid.Empty ? null : Value;
+
+    private bool ValeurInconnue => ValeurAffichee is { } v && Elements.All(e => e.Id != v);
+
+    private string Libelle(Ulid? id)
+        => id is null ? "" : Elements.FirstOrDefault(e => e.Id == id)?.Libelle ?? "(inactif)";
+}

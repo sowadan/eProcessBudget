@@ -1,0 +1,106 @@
+@*
+    Bouton de l'application.
+
+    VARIANTES : primary (défaut) | secondary | danger | ghost | outline | outline-primary
+    TAILLES   : sm | md (défaut) | lg
+
+    L'état « en chargement » désactive le bouton et remplace l'icône par un indicateur :
+    c'est le moyen le plus simple d'empêcher un double envoi de formulaire.
+
+    EXEMPLE
+    -------
+    <AppButton Icone="plus" OnClick="Creer">Nouvelle commande</AppButton>
+    <AppButton Variante="danger" Icone="trash" EnChargement="_suppression">Supprimer</AppButton>
+*@
+
+<button type="@Type"
+        class="@Classes"
+        style="@StyleInline"
+        disabled="@(Desactive || EnChargement)"
+        @onclick="OnClick"
+        @attributes="AttributsSupplementaires">
+
+    @if (EnChargement)
+    {
+        <svg class="w-4 h-4 flex-shrink-0" style="animation: spin 0.8s linear infinite;"
+             fill="none" viewBox="0 0 24 24" aria-hidden="true">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+    }
+    else if (!string.IsNullOrEmpty(Icone))
+    {
+        <span class="w-4 h-4 flex-shrink-0" aria-hidden="true">
+            <AppIcon Nom="@Icone" />
+        </span>
+    }
+
+    @if (ChildContent is not null)
+    {
+        <span>@ChildContent</span>
+    }
+</button>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>primary | secondary | danger | ghost | outline | outline-primary</summary>
+    [Parameter] public string Variante { get; set; } = "primary";
+
+    /// <summary>sm | md | lg</summary>
+    [Parameter] public string Taille { get; set; } = "md";
+
+    /// <summary>Nom d'icône AppIcon affiché avant le libellé.</summary>
+    [Parameter] public string Icone { get; set; } = "";
+
+    [Parameter] public bool EnChargement { get; set; }
+    [Parameter] public bool Desactive { get; set; }
+    [Parameter] public string Type { get; set; } = "button";
+    [Parameter] public EventCallback OnClick { get; set; }
+
+    /// <summary>Attributs HTML libres (title, aria-*, data-*...).</summary>
+    [Parameter(CaptureUnmatchedValues = true)]
+    public Dictionary<string, object>? AttributsSupplementaires { get; set; }
+
+    // Les couleurs de la charte passent par le style en ligne (variables CSS fixées à
+    // l'exécution par App.razor), indépendamment de la feuille Tailwind générée.
+    private string StyleInline => Variante switch
+    {
+        "primary"         => "background-color: var(--app-primaire);",
+        "outline-primary" => "border-color: var(--app-primaire); color: var(--app-primaire);",
+        _                 => ""
+    };
+
+    private string Classes
+    {
+        get
+        {
+            var taille = Taille switch
+            {
+                "sm" => "px-3 py-1.5 text-xs gap-1.5",
+                "lg" => "px-6 py-3 text-base gap-2.5",
+                _    => "px-4 py-2 text-sm gap-2"
+            };
+
+            var variante = Variante switch
+            {
+                "secondary"       => "bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300",
+                "danger"          => "bg-red-600 text-white hover:bg-red-700",
+                "ghost"           => "text-gray-600 hover:bg-gray-100",
+                "outline"         => "border-2 border-gray-300 text-gray-700 hover:border-gray-400 bg-transparent",
+                "outline-primary" => "border-2 bg-transparent hover:bg-red-50",
+                _                 => "text-white hover:opacity-90"      // primary
+            };
+
+            var etat = (Desactive || EnChargement)
+                ? "opacity-50 cursor-not-allowed"
+                : "cursor-pointer";
+
+            return "inline-flex items-center justify-center rounded-lg font-medium " +
+                   "transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-1 " +
+                   $"{taille} {variante} {etat}";
+        }
+    }
+}
+
+

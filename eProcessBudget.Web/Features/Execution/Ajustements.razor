@@ -1,0 +1,165 @@
+@page "/execution/ajustements"
+@inject IAjustementService Service
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Ajustements — Exécution budgétaire</PageTitle>
+
+@*
+    Ajustements de l'exercice (§ 3.4.2) : hausses et baisses motivées. La saisie vaut
+    soumission ; le Responsable Budget valide ou rejette. Seul un ajustement validé
+    modifie la prévision ajustée.
+*@
+
+<AutoriseSi DroitsRequis="AccesExecution.Lecture">
+    <PageHeader Titre="Ajustements" Description="Hausses et baisses des dotations, motivées et validées.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><a href="/execution" class="hover:underline">Exécution budgétaire</a>
+        </BreadcrumbContent>
+        <ActionsContent>
+            @if (_droits.Contains(TypeDroit.AjustementSaisir) && _exercice?.Statut == StatutExercice.Ouvert)
+            {
+                <AppButton Icone="plus" OnClick="() => EditerAsync(null)">Nouvel ajustement</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <div class="flex flex-col lg:flex-row gap-3">
+            <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+            <MudSelect T="StatutSaisie?" Value="_filtre.Statut" ValueChanged="ChangerStatutAsync" Label="Statut (tous si vide)" Clearable="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:200px"
+                       ToStringFunc="@(s => s is { } v ? LibellesExecution.Statut[v] : "")">
+                @foreach (var s in new[] { StatutSaisie.Soumis, StatutSaisie.Valide, StatutSaisie.Rejete })
+                {
+                    <MudSelectItem T="StatutSaisie?" Value="@s">@LibellesExecution.Statut[s]</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField T="string" @bind-Value="_filtre.Recherche" @bind-Value:after="() => ChargerAsync(1)" Placeholder="Numéro, ligne, justification…"
+                          DebounceInterval="300" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" />
+        </div>
+    </AppCard>
+
+    <AppCard PaddingCorps="false">
+        <ChildContent>
+            @if (_lignes.Count == 0)
+            {
+                <EtatVide Icone="adjustments" Titre="Aucun ajustement" />
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Hover="true">
+                    <thead><tr><th>Numéro</th><th>Date</th><th>Ligne</th><th>Motif</th><th>Justification</th><th class="text-right">Montant</th><th>Statut</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var a in _lignes)
+                        {
+                            <tr>
+                                <td class="font-mono text-xs whitespace-nowrap">@a.Numero</td>
+                                <td class="whitespace-nowrap">@a.Date.ToString("dd/MM/yyyy")</td>
+                                <td><a href="@DetailDotation.Lien(a.DotationId)" class="hover:underline"><span class="font-mono text-xs">@a.LigneCode</span> — @a.LigneLibelle</a>
+                                    @if (a.Imputation.Trim().Length > 0) { <div class="text-xs text-gray-500">@a.Imputation</div> }</td>
+                                <td>@a.Motif</td>
+                                <td class="text-xs text-gray-600">@a.Justification</td>
+                                <td class="tabular-nums text-right whitespace-nowrap @(a.Montant < 0 ? "text-red-700" : "text-emerald-700")">@(a.Montant > 0 ? "+" : "")@Formats.Montant(a.Montant)</td>
+                                <td><BadgeStatut Statut="a.Statut" /></td>
+                                <td class="text-right whitespace-nowrap">
+                                    @if (Ouvert && a.Statut == StatutSaisie.Soumis && _droits.Contains(TypeDroit.AjustementValider))
+                                    {
+                                        <MudIconButton Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Outlined.CheckCircle" title="Valider" OnClick="() => ValiderAsync(a)" />
+                                        <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Cancel" title="Rejeter" OnClick="() => RejeterAsync(a)" />
+                                    }
+                                    @if (Ouvert && a.Statut is StatutSaisie.Soumis or StatutSaisie.Rejete && _droits.Contains(TypeDroit.AjustementSaisir))
+                                    {
+                                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" title="Modifier" OnClick="() => EditerAsync(a)" />
+                                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Delete" title="Supprimer" OnClick="() => SupprimerAsync(a)" />
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </ChildContent>
+        <PiedContent>
+            <div class="flex items-center justify-between">
+                <p class="text-xs text-gray-500">@_total ajustement(s)</p>
+                @if (_total > Taille)
+                {
+                    <MudPagination Count="@((int)Math.Ceiling(_total / (double)Taille))" Selected="_page" SelectedChanged="ChargerAsync" Size="Size.Small" Color="Color.Primary" />
+                }
+            </div>
+        </PiedContent>
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    private const int Taille = 20;
+
+    private IReadOnlySet<TypeDroit> _droits = new HashSet<TypeDroit>();
+    private LigneExercice? _exercice;
+    private readonly FiltrePieces _filtre = new();
+    private List<LigneAjustement> _lignes = new();
+    private int _total, _page = 1;
+
+    private bool Ouvert => _exercice?.Statut == StatutExercice.Ouvert;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _droits = await Droits.ObtenirDroitsAsync(await UserContext.ObtenirUserIdAsync());
+        // Le validateur arrive pour traiter ce qui attend.
+        if (_droits.Contains(TypeDroit.AjustementValider)) _filtre.Statut = StatutSaisie.Soumis;
+    }
+
+    private async Task ChangerExerciceAsync(LigneExercice? e) { _exercice = e; await ChargerAsync(1); }
+    private async Task ChangerStatutAsync(StatutSaisie? s) { _filtre.Statut = s; await ChargerAsync(1); }
+
+    private async Task ChargerAsync(int page)
+    {
+        _page = page;
+        if (_exercice is null) return;
+        _filtre.ExerciceId = _exercice.Id;
+        (_lignes, _total) = await Service.ListerAsync(_filtre, page, Taille);
+    }
+
+    private async Task EditerAsync(LigneAjustement? a)
+    {
+        var saisie = a is null
+            ? new SaisieAjustement { Date = DateOnly.FromDateTime(DateTime.Today) }
+            : await Service.ObtenirSaisieAsync(a.Id);
+        if (saisie is null) return;
+        var parametres = new DialogParameters<DialogAjustement>
+        {
+            { x => x.Saisie, saisie }, { x => x.ExerciceId, _exercice!.Id },
+            { x => x.LibelleDotation, a is null ? null : $"{a.LigneCode} — {a.LigneLibelle}" }
+        };
+        var dialog = await DialogService.ShowAsync<DialogAjustement>(a is null ? "Nouvel ajustement" : $"Ajustement {a.Numero}", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) { Snackbar.Add("Ajustement soumis à validation.", Severity.Success); await ChargerAsync(_page); }
+    }
+
+    private async Task ValiderAsync(LigneAjustement a)
+    {
+        var (ok, erreur) = await Service.ValiderAsync(a.Id);
+        Snackbar.Add(ok ? $"Ajustement {a.Numero} validé." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync(_page);
+    }
+
+    private async Task RejeterAsync(LigneAjustement a)
+    {
+        var parametres = new DialogParameters<DialogMotif> { { x => x.Message, $"Rejeter l'ajustement {a.Numero}. Son auteur sera notifié du motif." }, { x => x.Libelle, "Rejeter" } };
+        if (await (await DialogService.ShowAsync<DialogMotif>("Rejet", parametres)).Result is not { Canceled: false, Data: string motif }) return;
+        var (ok, erreur) = await Service.RejeterAsync(a.Id, motif);
+        Snackbar.Add(ok ? "Ajustement rejeté." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync(_page);
+    }
+
+    private async Task SupprimerAsync(LigneAjustement a)
+    {
+        var (ok, erreur) = await Service.SupprimerAsync(a.Id);
+        Snackbar.Add(ok ? "Ajustement supprimé." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync(_page);
+    }
+}

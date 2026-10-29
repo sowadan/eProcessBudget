@@ -1,0 +1,39 @@
+@page "/budget-programme/indicateurs"
+@inject IDialogService DialogService
+
+<PageTitle>Budget-programme</PageTitle>
+
+<PageReferentiel T="Indicateur" Formulaire="typeof(FormulaireIndicateur)" Rubrique="Budget-programme" LienRubrique="/budget-programme"
+                 Description="Indicateurs de performance des programmes, des actions et des résultats immédiats. Cibles : par cycle.">
+    <EnTetes>
+        <MudTh>Code</MudTh>
+        <MudTh>Libellé</MudTh>
+        <MudTh>Niveau</MudTh>
+        <MudTh>Rattachement</MudTh>
+        <MudTh>Unité</MudTh>
+        <MudTh>Sens</MudTh>
+        <MudTh>Référence</MudTh>
+    </EnTetes>
+    <Colonnes>
+        <MudTd DataLabel="Code"><span class="font-mono text-xs font-semibold text-gray-800">@context.Code</span></MudTd>
+        <MudTd DataLabel="Libellé"><span class="text-sm text-gray-700">@context.Libelle</span></MudTd>
+        <MudTd DataLabel="Niveau"><span class="text-sm text-gray-500">@LibellesBudgetProgramme.Niveau[context.Niveau]</span></MudTd>
+        <MudTd DataLabel="Rattachement"><span class="text-sm text-gray-500">@(context.Programme?.Code ?? context.Action?.Code)</span></MudTd>
+        <MudTd DataLabel="Unité"><span class="text-sm text-gray-500">@context.UniteMesure.Libelle</span></MudTd>
+        <MudTd DataLabel="Sens"><span class="text-sm text-gray-500">@(context.SensEvolution == SensEvolution.BaisseAttendue ? "↓" : "↑")</span></MudTd>
+        <MudTd DataLabel="Référence"><span class="text-sm text-gray-500">@(context.ValeurReference is null ? "—" : $"{Formats.Nombre(context.ValeurReference)} ({context.AnneeReference})")</span></MudTd>
+    </Colonnes>
+    <ActionsSupplementaires>
+        <MudTooltip Text="Cibles annuelles">
+            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.TrackChanges" OnClick="() => CiblesAsync(context)" />
+        </MudTooltip>
+    </ActionsSupplementaires>
+</PageReferentiel>
+
+@code {
+    private async Task CiblesAsync(Indicateur indicateur)
+    {
+        var parametres = new DialogParameters<DialogCibles> { { x => x.IndicateurId, indicateur.Id }, { x => x.Libelle, $"{indicateur.Code} — {indicateur.Libelle}" } };
+        await DialogService.ShowAsync<DialogCibles>("Cibles de l'indicateur", parametres, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+    }
+}

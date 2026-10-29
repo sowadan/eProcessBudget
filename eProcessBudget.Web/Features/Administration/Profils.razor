@@ -1,0 +1,193 @@
+@page "/administration/profils"
+@inject IProfilService ProfilService
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Profils et droits - Administration</PageTitle>
+
+@*
+    Gestion des profils : les paquets de droits attribuables aux utilisateurs.
+*@
+
+<AutoriseSi DroitsRequis="new[] { TypeDroit.ProfilConsultation, TypeDroit.ProfilGestion }">
+
+    <PageHeader Titre="Profils et droits"
+                Description="Ensembles de droits réutilisables, attribués aux utilisateurs.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a>
+            <span>/</span>
+            <span class="text-gray-700">Administration</span>
+        </BreadcrumbContent>
+        <ActionsContent>
+            <AutoriseSi DroitsRequis="new[] { TypeDroit.ProfilGestion }" Discret="true">
+                <AppButton Icone="plus" OnClick="CreerAsync">Nouveau profil</AppButton>
+            </AutoriseSi>
+        </ActionsContent>
+    </PageHeader>
+
+    <!--  Liste des profils  -->
+    @if (_chargement)
+    {
+        <div class="flex justify-center py-16">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+        </div>
+    }
+    else if (_listeProfils.Count == 0)
+    {
+        <AppCard PaddingCorps="false">
+            <EtatVide Icone="shield-check"
+                      Titre="Aucun profil"
+                      Message="Créez un profil pour regrouper des droits et les attribuer." />
+        </AppCard>
+    }
+    else
+    {
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            @foreach (var profil in _listeProfils)
+            {
+                <AppCard>
+                    <TitreContent>
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                                 style="background-color: color-mix(in srgb, var(--app-secondaire) 12%, transparent);">
+                                <div class="w-5 h-5" style="color: var(--app-secondaire);">
+                                    <AppIcon Nom="shield-check" />
+                                </div>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <h3 class="text-base font-semibold text-gray-800">@profil.Libelle</h3>
+                                    @if (profil.EstSysteme)
+                                    {
+                                        <AppBadge Petit="true">Système</AppBadge>
+                                    }
+                                    @if (!profil.EstActif)
+                                    {
+                                        <AppBadge Variante="warning" Petit="true">Inactif</AppBadge>
+                                    }
+                                </div>
+                                <code class="text-xs text-gray-400">@profil.Code</code>
+                            </div>
+                        </div>
+                    </TitreContent>
+
+                    <ActionsContent>
+                        <AutoriseSi DroitsRequis="new[] { TypeDroit.ProfilGestion }" Discret="true">
+                            <MudTooltip Text="Configurer les droits">
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Tune"
+                                               OnClick="() => ConfigurerDroitsAsync(profil)" />
+                            </MudTooltip>
+                        </AutoriseSi>
+                    </ActionsContent>
+
+                    <ChildContent>
+                        @if (!string.IsNullOrWhiteSpace(profil.Description))
+                        {
+                            <p class="text-sm text-gray-600 mb-4">@profil.Description</p>
+                        }
+
+                        @{ var droits = profil.Droits.Select(d => d.TypeDroit).ToList(); }
+
+                        @if (droits.Count == 0)
+                        {
+                            <p class="text-sm text-gray-400">Aucun droit attribué à ce profil.</p>
+                        }
+                        else
+                        {
+                            <div class="flex flex-wrap gap-1.5">
+                                @foreach (var droit in droits.OrderBy(DroitHelper.Libelle).Take(10))
+                                {
+                                    <AppBadge Variante="info" Petit="true">@DroitHelper.Libelle(droit)</AppBadge>
+                                }
+                                @if (droits.Count > 10)
+                                {
+                                    <AppBadge Petit="true">+ @(droits.Count - 10)</AppBadge>
+                                }
+                            </div>
+                        }
+                    </ChildContent>
+
+                    <PiedContent>
+                        <p class="text-xs text-gray-500">
+                            @profil.Droits.Count droit(s) —
+                            @profil.UtilisateurProfils.Count utilisateur(s) rattaché(s)
+                        </p>
+                    </PiedContent>
+                </AppCard>
+            }
+        </div>
+    }
+
+    <!-- ═══ Catalogue des droits ═════════════════════════════════════════ -->
+    <AppCard Titre="Catalogue des droits" SousTitre="Toutes les actions que le socle sait contrôler"
+             ClasseSup="mt-6">
+        <ChildContent>
+            @foreach (var groupe in DroitHelper.Tous().GroupBy(DroitHelper.Groupe))
+            {
+                <div class="mb-5 last:mb-0">
+                    <p class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">@groupe.Key</p>
+                    <div class="flex flex-wrap gap-1.5">
+                        @foreach (var droit in groupe)
+                        {
+                            <MudTooltip Text="@droit.ToString()">
+                                <AppBadge Petit="true">@DroitHelper.Libelle(droit)</AppBadge>
+                            </MudTooltip>
+                        }
+                    </div>
+                </div>
+            }
+        </ChildContent>
+
+        <PiedContent>
+            <p class="text-xs text-gray-500">
+                Pour ajouter un droit : une valeur dans <code>TypeDroit.cs</code>, un libellé
+                dans <code>DroitHelper.cs</code>. Il apparaît alors automatiquement ici et
+                dans la configuration des profils.
+            </p>
+        </PiedContent>
+    </AppCard>
+</AutoriseSi>
+
+@code {
+    private List<Profil> _listeProfils = new();
+    private bool _chargement = true;
+
+    protected override async Task OnInitializedAsync() => await ChargerAsync();
+
+    private async Task ChargerAsync()
+    {
+        _chargement = true;
+        _listeProfils = await ProfilService.ListerAsync();
+        _chargement = false;
+    }
+
+    private async Task CreerAsync()
+    {
+        var parametres = new DialogParameters<DialogProfil> { { x => x.Profil, new Profil() } };
+
+        var dialog = await DialogService.ShowAsync<DialogProfil>("Nouveau profil", parametres);
+        var reponse = await dialog.Result;
+        if (reponse is null || reponse.Canceled) return;
+
+        Snackbar.Add("Profil créé.", Severity.Success);
+        await ChargerAsync();
+    }
+
+    private async Task ConfigurerDroitsAsync(Profil profil)
+    {
+        var parametres = new DialogParameters<DialogDroitsProfil> { { x => x.Profil, profil } };
+
+        var dialog = await DialogService.ShowAsync<DialogDroitsProfil>(
+            $"Droits du profil « {profil.Libelle} »", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+
+        var reponse = await dialog.Result;
+        if (reponse is null || reponse.Canceled) return;
+
+        Snackbar.Add("Droits mis à jour.", Severity.Success);
+        await ChargerAsync();
+    }
+}
+
+

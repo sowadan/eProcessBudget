@@ -1,0 +1,42 @@
+@inject IExerciceService Exercices
+
+@*
+    Choix d'un exercice budgétaire. Sans valeur, l'exercice ouvert le plus récent est
+    proposé (sinon le plus récent).
+*@
+
+@if (_exercices.Count == 0 && _charge)
+{
+    <AppAlert Variante="warning" Titre="Aucun exercice">Créez d'abord un exercice dans Paramétrage › Exercices et cycles.</AppAlert>
+}
+else
+{
+    <MudSelect T="Ulid?" Value="Value?.Id" ValueChanged="ChoisirAsync" Label="Exercice"
+               Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:200px"
+               ToStringFunc="@(id => _exercices.FirstOrDefault(e => e.Id == id) is { } e ? Libelle(e) : "")">
+        @foreach (var e in _exercices)
+        {
+            <MudSelectItem T="Ulid?" Value="@e.Id">@Libelle(e)</MudSelectItem>
+        }
+    </MudSelect>
+}
+
+@code {
+    [Parameter] public LigneExercice? Value { get; set; }
+    [Parameter] public EventCallback<LigneExercice?> ValueChanged { get; set; }
+
+    private List<LigneExercice> _exercices = new();
+    private bool _charge;
+
+    private static string Libelle(LigneExercice e) => $"{e.Annee} ({LibellesParametrage.De(LibellesParametrage.StatutExercice, e.Statut)})";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _exercices = await Exercices.ListerAsync();
+        _charge = true;
+        if (Value is null && _exercices.Count > 0)
+            await ValueChanged.InvokeAsync(_exercices.FirstOrDefault(e => e.Statut == StatutExercice.Ouvert) ?? _exercices[0]);
+    }
+
+    private Task ChoisirAsync(Ulid? id) => ValueChanged.InvokeAsync(_exercices.FirstOrDefault(e => e.Id == id));
+}

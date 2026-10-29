@@ -1,0 +1,276 @@
+@page "/rapports"
+@using eProcessBudget.Infrastructure.Services.Rapports
+@using eProcessBudget.Web.Features.Axes.Commun
+@using eProcessBudget.Web.Features.BudgetProgramme.Commun
+@inject IRapportService Service
+@inject DepotRapports Depot
+@inject IUserContextService UserContext
+@inject IExerciceService Exercices
+@inject IReferentielService<Axe> ServiceAxe
+@inject IReferentielService<Programme> ServiceProgramme
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<PageTitle>Rapports et exportation</PageTitle>
+
+@*
+    Rapports et exportation (cahier fonctionnel § 3.12) : états de gestion budgétaire et
+    documents du budget-programme, en Excel ou en PDF (en-tête et pied de page institutionnels,
+    filtres en en-tête), ou ouverts dans un onglet pour l'impression. Seuls les états dont
+    l'utilisateur peut lire les données sont proposés ; chaque export est journalisé.
+
+    Disposition : la barre de l'état choisi (paramètres et actions) reste en haut, visible
+    pendant qu'on parcourt le catalogue en dessous.
+*@
+
+<AutoriseSi DroitsRequis="new[] { TypeDroit.RapportExporter }">
+    <PageHeader Titre="Rapports et exportation" Description="États de gestion et documents du budget-programme, en Excel ou en PDF.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><span>Pilotage</span>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <!-- ═══ État choisi : paramètres et actions, toujours visibles ═══════════ -->
+    <div class="sticky top-0 z-20 -mx-1 px-1 pb-4 bg-gray-50">
+        <div class="rounded-xl border bg-white shadow-sm @(_choisi is null ? "border-dashed border-gray-300" : "border-gray-200")">
+            @if (_choisi is not { } d)
+            {
+                <div class="flex items-center gap-3 px-6 py-5 text-gray-500">
+                    <span class="w-6 h-6 flex-shrink-0"><AppIcon Nom="document-text" /></span>
+                    <p class="text-sm">Choisissez un état dans le catalogue ci-dessous : ses paramètres et les boutons d'export s'afficheront ici.</p>
+                </div>
+            }
+            else
+            {
+                <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 px-6 pt-5">
+                    <div class="min-w-0">
+                        <p class="text-xs font-medium uppercase tracking-wide text-gray-400">@d.Famille</p>
+                        <h2 class="text-lg font-semibold text-gray-900">@d.Titre</h2>
+                        <p class="text-sm text-gray-500 mt-0.5">@d.Description</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2 flex-shrink-0">
+                        <AppButton Icone="download" EnChargement="_enCours == Action.Excel" Desactive="_enCours is not null" OnClick="() => ExporterAsync(FormatRapport.Excel)">
+                            Exporter en Excel
+                        </AppButton>
+                        <AppButton Icone="download" Variante="outline" EnChargement="_enCours == Action.Pdf" Desactive="_enCours is not null" OnClick="() => ExporterAsync(FormatRapport.Pdf)">
+                            Exporter en PDF
+                        </AppButton>
+                        <AppButton Icone="printer" Variante="secondary" EnChargement="_enCours == Action.Impression" Desactive="_enCours is not null" OnClick="PreparerImpressionAsync">
+                            Imprimer
+                        </AppButton>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 px-6 pt-4">
+                    @if (Demande(ParametresDemandes.Exercice))
+                    {
+                        <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+                    }
+                    @if (Demande(ParametresDemandes.Axe))
+                    {
+                        <ChoixReference Label="@(d.Code == "SITUATION_AXE" ? "Axe" : "Axe (facultatif)")" Elements="_axes" Obligatoire="@(d.Code == "SITUATION_AXE")"
+                                        Value="_parametres.AxeId" ValueChanged="v => Changer(() => _parametres.AxeId = v)" />
+                    }
+                    @if (Demande(ParametresDemandes.Periode) || Demande(ParametresDemandes.Trimestre) || Demande(ParametresDemandes.Semestre))
+                    {
+                        <MudSelect T="Ulid?" Value="_parametres.PeriodeId" ValueChanged="v => Changer(() => _parametres.PeriodeId = v)" Label="@LibellePeriode"
+                                   Clearable="@Demande(ParametresDemandes.Periode)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                   ToStringFunc="@(id => PeriodesProposees.FirstOrDefault(x => x.Id == id) is { } x ? Libelle(x) : "")">
+                            @foreach (var x in PeriodesProposees)
+                            {
+                                <MudSelectItem T="Ulid?" Value="@x.Id">@Libelle(x)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                    @if (Demande(ParametresDemandes.Cycle))
+                    {
+                        <SelecteurCycle Value="_cycle" ValueChanged="c => Changer(() => { _cycle = c; _parametres.CycleId = c?.Id; })" />
+                    }
+                    @if (Demande(ParametresDemandes.Programme))
+                    {
+                        <ChoixReference Label="Programme (facultatif : tous)" Elements="_programmes" Value="_parametres.ProgrammeId"
+                                        ValueChanged="v => Changer(() => _parametres.ProgrammeId = v)" />
+                    }
+                    @if (Demande(ParametresDemandes.Dates))
+                    {
+                        <ChampDate Label="Du" Obligatoire="true" Value="_parametres.Du" ValueChanged="v => Changer(() => _parametres.Du = v)" />
+                        <ChampDate Label="Au" Obligatoire="true" Value="_parametres.Au" ValueChanged="v => Changer(() => _parametres.Au = v)" />
+                    }
+                </div>
+
+                <div class="px-6 pt-4 pb-5 space-y-3">
+                    @if (_erreur is not null)
+                    {
+                        <AppAlert Variante="danger" Titre="Export impossible">@_erreur</AppAlert>
+                    }
+                    @if (_lienImpression is not null)
+                    {
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+                            <p class="text-sm text-emerald-900 flex-1">Le PDF est prêt. Ouvrez-le dans un nouvel onglet, puis imprimez-le depuis le navigateur (valable 10 minutes).</p>
+                            <a href="@_lienImpression" target="_blank" rel="noopener"
+                               class="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 transition-colors">
+                                <span class="w-4 h-4"><AppIcon Nom="external-link" /></span>
+                                Ouvrir le PDF à imprimer
+                            </a>
+                        </div>
+                    }
+                    <p class="text-xs text-gray-400">
+                        En-tête et pied de page repris de Paramétrage › Organisme (logo, raison sociale, textes des rapports) ; filtres rappelés dans le document ; export journalisé.
+                    </p>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- ═══ Catalogue ═══════════════════════════════════════════════════════ -->
+    @if (_rapports.Count == 0 && _charge)
+    {
+        <AppCard><EtatVide Icone="document-text" Titre="Aucun état disponible" Message="Il vous faut aussi le droit de consulter les données d'un état." /></AppCard>
+    }
+    @foreach (var famille in _rapports.GroupBy(r => r.Famille))
+    {
+        <section class="mb-6">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">@famille.Key <span class="text-gray-400 font-normal">· @famille.Count() état(s)</span></h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                @foreach (var r in famille)
+                {
+                    var actif = _choisi?.Code == r.Code;
+                    <button type="button" @onclick="() => Choisir(r)"
+                            class="text-left rounded-xl border bg-white p-4 transition-all hover:shadow-md hover:border-gray-300 @(actif ? "ring-2 ring-offset-1 border-transparent" : "border-gray-200")"
+                            style="@(actif ? "--tw-ring-color: var(--app-primaire);" : "")">
+                        <div class="flex items-start gap-3">
+                            <span class="w-9 h-9 flex-shrink-0 rounded-lg flex items-center justify-center @(actif ? "text-white" : "bg-gray-100 text-gray-500")"
+                                  style="@(actif ? "background-color: var(--app-primaire);" : "")">
+                                <span class="w-5 h-5"><AppIcon Nom="@(r.Famille == CatalogueRapports.FamilleGestion ? "chart-bar" : "clipboard-list")" /></span>
+                            </span>
+                            <div class="min-w-0">
+                                <p class="text-sm font-semibold text-gray-900">@r.Titre</p>
+                                <p class="text-xs text-gray-500 mt-1 line-clamp-2">@r.Description</p>
+                                <div class="flex flex-wrap gap-1 mt-2">
+                                    @foreach (var p in ParametresLisibles(r.Parametres))
+                                    {
+                                        <AppBadge Petit="true">@p</AppBadge>
+                                    }
+                                    @if (r.Paysage) { <AppBadge Petit="true" Variante="info">Paysage</AppBadge> }
+                                </div>
+                            </div>
+                        </div>
+                    </button>
+                }
+            </div>
+        </section>
+    }
+</AutoriseSi>
+
+@code {
+    /// <summary>Action en cours (une seule à la fois).</summary>
+    private enum Action { Excel, Pdf, Impression }
+
+    private List<DescripteurRapport> _rapports = new();
+    private DescripteurRapport? _choisi;
+    private ParametresRapport _parametres = new();
+    private LigneExercice? _exercice;
+    private LigneCycle? _cycle;
+    private List<LignePeriode> _periodes = new();
+    private List<ElementListe> _axes = new(), _programmes = new();
+    private Action? _enCours;
+    private string? _erreur, _lienImpression;
+    private bool _charge;
+
+    private bool Demande(ParametresDemandes p) => _choisi is not null && _choisi.Parametres.HasFlag(p);
+
+    private IEnumerable<LignePeriode> PeriodesProposees => _periodes.Where(x =>
+        Demande(ParametresDemandes.Trimestre) ? x.Type == TypePeriode.Trimestre
+        : Demande(ParametresDemandes.Semestre) ? x.Type == TypePeriode.Semestre
+        : x.Type != TypePeriode.Annee);
+
+    private string LibellePeriode => Demande(ParametresDemandes.Trimestre) ? "Trimestre"
+        : Demande(ParametresDemandes.Semestre) ? "Semestre" : "Situation à fin de (facultatif)";
+
+    private static string Libelle(LignePeriode p) => LibellesConsommation.Periode(p.Type, p.Numero, p.DateDebut);
+
+    /// <summary>Paramètres d'un état, en clair, pour sa tuile.</summary>
+    private static IEnumerable<string> ParametresLisibles(ParametresDemandes p)
+    {
+        if (p.HasFlag(ParametresDemandes.Exercice)) yield return "Exercice";
+        if (p.HasFlag(ParametresDemandes.Cycle)) yield return "Cycle";
+        if (p.HasFlag(ParametresDemandes.Axe)) yield return "Axe";
+        if (p.HasFlag(ParametresDemandes.Trimestre)) yield return "Trimestre";
+        if (p.HasFlag(ParametresDemandes.Semestre)) yield return "Semestre";
+        if (p.HasFlag(ParametresDemandes.Periode)) yield return "Période";
+        if (p.HasFlag(ParametresDemandes.Programme)) yield return "Programme";
+        if (p.HasFlag(ParametresDemandes.Dates)) yield return "Dates";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _rapports = await Service.ListerDisponiblesAsync();
+        _axes = await ServiceAxe.ListerPourSelectionAsync(a => a.TypeAxe == TypeAxe.Depense);
+        _programmes = await ServiceProgramme.ListerPourSelectionAsync();
+        _charge = true;
+    }
+
+    private void Choisir(DescripteurRapport r)
+    {
+        _choisi = r;
+        _erreur = null;
+        _lienImpression = null;
+        // L'exercice et le cycle sont gardés d'un état à l'autre ; le reste repart à zéro.
+        _parametres = new ParametresRapport
+        {
+            ExerciceId = _exercice?.Id, CycleId = _cycle?.Id,
+            Du = DateOnly.FromDateTime(DateTime.Today.AddMonths(-1)), Au = DateOnly.FromDateTime(DateTime.Today)
+        };
+    }
+
+    /// <summary>Un paramètre change : le PDF préparé ne correspond plus.</summary>
+    private void Changer(System.Action changer)
+    {
+        changer();
+        _lienImpression = null;
+        _erreur = null;
+    }
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        Changer(() => { _parametres.ExerciceId = e?.Id; _parametres.PeriodeId = null; });
+        _periodes = e is null ? new() : await Exercices.ListerPeriodesAsync(e.Id);
+    }
+
+    private async Task<FichierRapport?> GenererAsync(FormatRapport format)
+    {
+        _erreur = null;
+        var (ok, erreur, fichier) = await Service.GenererAsync(_choisi!.Code, _parametres, format);
+        if (!ok) _erreur = erreur;
+        return fichier;
+    }
+
+    private async Task ExporterAsync(FormatRapport format)
+    {
+        _enCours = format == FormatRapport.Excel ? Action.Excel : Action.Pdf;
+        try
+        {
+            if (await GenererAsync(format) is { } fichier)
+            {
+                using var flux = new MemoryStream(fichier.Contenu);
+                using var reference = new DotNetStreamReference(flux);
+                await JS.InvokeVoidAsync("appTelechargerFlux", fichier.NomFichier, reference);
+                Snackbar.Add($"{fichier.NomFichier} téléchargé.", Severity.Success);
+            }
+        }
+        finally { _enCours = null; }
+    }
+
+    private async Task PreparerImpressionAsync()
+    {
+        _enCours = Action.Impression;
+        _lienImpression = null;
+        try
+        {
+            if (await GenererAsync(FormatRapport.Pdf) is { } fichier)
+                _lienImpression = $"/rapports/fichier/{Depot.Deposer(await UserContext.ObtenirUserIdAsync(), fichier)}";
+        }
+        finally { _enCours = null; }
+    }
+}

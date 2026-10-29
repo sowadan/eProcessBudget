@@ -1,0 +1,82 @@
+@inject IProfilService Profils
+
+@* Création / modification de l'identité d'un profil. Ses droits se règlent ensuite via DialogDroitsProfil. *@
+
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="Profil" OnValidSubmit="EnregistrerAsync" id="form-profil">
+            <DataAnnotationsValidator />
+
+            @if (!string.IsNullOrEmpty(_erreur)) 
+            {
+                <div class="mb-4">
+                    <AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert>
+                </div>
+            }
+            
+
+            <div class="space-y-4">
+                <MudTextField @bind-Value="Profil.Code" Label="Code"
+                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Disabled="@(Profil.Id != Ulid.Empty)"
+                              HelperText="Identifiant technique stable, en majuscules. Non modifiable après création." />
+
+                <MudTextField @bind-Value="Profil.Libelle" Label="Libellé"
+                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                              HelperText="Nom affiché dans les écrans d'administration." />
+
+                <MudTextField @bind-Value="Profil.Description" Label="Description"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Lines="3"
+                              HelperText="À qui ce profil est-il destiné ? (facultatif)" />
+
+                <MudSwitch @bind-Value="Profil.EstActif" Label="Profil actif" Color="Color.Primary" />
+            </div>
+        </EditForm>
+    </DialogContent>
+
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="Annuler">Annuler</AppButton>
+        <AppButton Type="submit" Icone="check-circle" EnChargement="_enregistrement"
+                   AttributsSupplementaires="@(new Dictionary<string, object> { { "form", "form-profil" } })">
+            Enregistrer
+        </AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Profil Profil { get; set; } = new();
+
+    private bool _enregistrement;
+    private string? _erreur;
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        _erreur = null;
+
+        var (ok, erreur) = Profil.Id == Ulid.Empty
+            ? await CreerAsync()
+            : await Profils.ModifierAsync(Profil);
+
+        if (!ok)
+        {
+            _erreur = erreur;
+            _enregistrement = false;
+            return;
+        }
+
+        _enregistrement = false;
+        Dialog.Close(DialogResult.Ok(Profil));
+    }
+
+    private async Task<(bool, string?)> CreerAsync()
+    {
+        var (ok, erreur, _) = await Profils.CreerAsync(Profil);
+        return (ok, erreur);
+    }
+
+    private void Annuler() => Dialog.Cancel();
+}
+
+

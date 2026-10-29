@@ -1,0 +1,163 @@
+@page "/axes/entretien"
+@inject ISyntheseAxeService Synthese
+@inject IAvancementService Avancements
+@inject IBesoinEntretienService Besoins
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Entretien routier — Axes de dépenses</PageTitle>
+
+@*
+    Axe Entretien routier (cahier fonctionnel § 3.5) : opérations de travaux et leur
+    situation budgétaire, kilométrage prévu et entretenu par type de travaux. Le budget suit
+    le cycle commun (prévisions, ajustements, reports, AD, paiements) ; les contrats et
+    l'avancement physique ont leurs écrans.
+*@
+
+<AutoriseSi DroitsRequis="Axe.Lecture">
+    <PageHeader Titre="Entretien routier" Description="Opérations de travaux et de réhabilitation, prestations associées.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><span>Axes de dépenses</span>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+    </AppCard>
+
+    @if (_exercice is not null)
+    {
+        <CartesAxe Montants="_totaux" />
+
+        <CarteIndicateursEntretien Indicateurs="_indicateurs" />
+
+        <AppCard ClasseSup="mb-4" PaddingCorps="false" Titre="Besoins d'entretien évalués" SousTitre="Dénominateur du taux de couverture : global, ou par type de travaux.">
+            <ActionsContent>
+                @if (Modifiable)
+                {
+                    <AppButton Taille="sm" Icone="plus" OnClick="() => EditerBesoinAsync(null)">Saisir un besoin</AppButton>
+                }
+            </ActionsContent>
+            <ChildContent>
+                @if (_besoins.Count == 0)
+                {
+                    <EtatVide Icone="clipboard-list" Titre="Aucun besoin saisi" Message="Sans besoins évalués, le taux de couverture n'est pas significatif." />
+                }
+                else
+                {
+                    <MudSimpleTable Dense="true">
+                        <thead><tr><th>Type de travaux</th><th class="text-right">Montant</th><th class="text-right">Km</th><th>Source</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var b in _besoins)
+                            {
+                                <tr>
+                                    <td>@b.TypeTravaux</td>
+                                    <td class="tabular-nums text-right">@Formats.Montant(b.Montant)</td>
+                                    <td class="tabular-nums text-right">@Formats.Nombre(b.Km)</td>
+                                    <td class="text-xs text-gray-600">@b.Commentaire</td>
+                                    <td class="text-right whitespace-nowrap">
+                                        @if (Modifiable)
+                                        {
+                                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditerBesoinAsync(b)" />
+                                            <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerBesoinAsync(b)" />
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                            <tr class="font-semibold bg-gray-50"><td>Total</td><td class="tabular-nums text-right">@Formats.Montant(_besoins.Sum(b => b.Montant))</td><td colspan="3"></td></tr>
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </ChildContent>
+        </AppCard>
+
+        <AppCard ClasseSup="mb-4" Titre="Kilométrage par type de travaux" SousTitre="Prévu par les opérations non annulées ; entretenu sur l'exercice et en cumul. Taux = cumul / prévu.">
+            <ChildContent>
+                @if (_km.Count == 0)
+                {
+                    <EtatVide Icone="chart-bar" Titre="Aucun kilométrage" Message="Renseignez le kilométrage prévu des opérations et saisissez l'avancement physique." />
+                }
+                else
+                {
+                    <MudSimpleTable Dense="true">
+                        <thead><tr><th>Type de travaux</th><th class="text-right">Km prévus</th><th class="text-right">Km entretenus (exercice)</th><th class="text-right">Km entretenus (cumul)</th><th class="text-right">Avancement</th></tr></thead>
+                        <tbody>
+                            @foreach (var k in _km)
+                            {
+                                <tr>
+                                    <td>@k.TypeTravaux</td>
+                                    <td class="tabular-nums text-right">@Formats.Nombre(k.KmPrevus)</td>
+                                    <td class="tabular-nums text-right">@Formats.Nombre(k.KmExercice)</td>
+                                    <td class="tabular-nums text-right">@Formats.Nombre(k.KmCumules)</td>
+                                    <td class="tabular-nums text-right">@Formats.Taux(k.Taux)</td>
+                                </tr>
+                            }
+                            <tr class="font-semibold bg-gray-50">
+                                <td>Total</td>
+                                <td class="tabular-nums text-right">@Formats.Nombre(_km.Sum(k => k.KmPrevus))</td>
+                                <td class="tabular-nums text-right">@Formats.Nombre(_km.Sum(k => k.KmExercice))</td>
+                                <td class="tabular-nums text-right">@Formats.Nombre(_km.Sum(k => k.KmCumules))</td>
+                                <td class="tabular-nums text-right">@Formats.Taux(CalculsAxes.TauxAvancementKm(_km.Sum(k => k.KmCumules), _km.Sum(k => k.KmPrevus)))</td>
+                            </tr>
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </ChildContent>
+        </AppCard>
+    }
+
+    <ListeProjets Axe="Axe" Exercice="_exercice" />
+</AutoriseSi>
+
+@code {
+    private static readonly AxeDepense Axe = AxesDepense.Entretien;
+
+    private LigneExercice? _exercice;
+    private MontantsDotation _totaux = MontantsDotation.Zero;
+    private List<SyntheseKm> _km = new();
+    private List<LigneBesoin> _besoins = new();
+    private IndicateursEntretien? _indicateurs;
+    private bool _peutSaisir;
+
+    private bool Modifiable => _peutSaisir && _exercice is { Statut: not StatutExercice.Cloture };
+
+    protected override async Task OnInitializedAsync()
+        => _peutSaisir = (await Droits.ObtenirDroitsAsync(await UserContext.ObtenirUserIdAsync())).Contains(Axe.DroitSaisir);
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        if (e is null) return;
+        _totaux = await Synthese.TotauxAsync(Axe, e.Id);
+        _km = await Avancements.SyntheseAsync(e.Id);
+        await ChargerBesoinsAsync();
+    }
+
+    private async Task ChargerBesoinsAsync()
+    {
+        _besoins = await Besoins.ListerAsync(_exercice!.Id);
+        _indicateurs = await Besoins.IndicateursAsync(_exercice.Id);
+    }
+
+    private async Task EditerBesoinAsync(LigneBesoin? b)
+    {
+        var saisie = b is null ? new SaisieBesoin { ExerciceId = _exercice!.Id } : await Besoins.ObtenirSaisieAsync(b.Id);
+        if (saisie is null) return;
+        var dialog = await DialogService.ShowAsync<DialogBesoin>(b is null ? "Saisir un besoin d'entretien" : "Modifier le besoin",
+            new DialogParameters<DialogBesoin> { { x => x.Saisie, saisie } }, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Besoin enregistré.", Severity.Success);
+            await ChargerBesoinsAsync();
+        }
+    }
+
+    private async Task SupprimerBesoinAsync(LigneBesoin b)
+    {
+        var (ok, erreur) = await Besoins.SupprimerAsync(b.Id);
+        Snackbar.Add(ok ? "Besoin supprimé." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerBesoinsAsync();
+    }
+}

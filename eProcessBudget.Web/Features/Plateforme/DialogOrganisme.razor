@@ -1,0 +1,100 @@
+@inject IOrganismeService Organismes
+
+@*
+    Création (Id = Ulid.Empty) ou modification de l'identité d'un organisme.
+    Le code identifie l'organisme : il n'est plus modifiable après création.
+*@
+
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="Organisme" OnValidSubmit="EnregistrerAsync" id="form-organisme">
+            @if (!string.IsNullOrEmpty(_erreur))
+            {
+                <div class="mb-4">
+                    <AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert>
+                </div>
+            }
+
+            <div class="space-y-4">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <MudTextField @bind-Value="Organisme.Code" Label="Code" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  MaxLength="20" Disabled="@(!EstCreation)" HelperText="Unique, non modifiable." />
+                    <MudTextField @bind-Value="Organisme.Sigle" Label="Sigle" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  MaxLength="30" Class="sm:col-span-2" />
+                </div>
+
+                <MudTextField @bind-Value="Organisme.RaisonSociale" Label="Raison sociale"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" />
+
+                <MudTextField @bind-Value="Organisme.Adresse" Label="Adresse postale"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="300" />
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <MudTextField @bind-Value="Organisme.Telephone" Label="Téléphone"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="30" />
+                    <MudTextField @bind-Value="Organisme.Email" Label="E-mail de contact"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="150" />
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <MudTextField @bind-Value="Organisme.TutelleTechnique" Label="Tutelle technique"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" />
+                    <MudTextField @bind-Value="Organisme.TutelleFinanciere" Label="Tutelle financière"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" />
+                </div>
+
+                @if (EstCreation)
+                {
+                    <AppAlert Variante="info" Titre="Données initiales">
+                        L'organisme sera créé avec ses paramètres (session de 30 minutes, 5 tentatives,
+                        rétention de 12 mois), la devise XOF, les seuils d'alerte 80/90/100 %, les axes,
+                        natures de dépense, sources de financement et unités de mesure par défaut.
+                        Tout reste modifiable dans le Paramétrage.
+                    </AppAlert>
+                }
+            </div>
+        </EditForm>
+    </DialogContent>
+
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Type="submit" Icone="check-circle" EnChargement="_enregistrement"
+                   AttributsSupplementaires="@(new Dictionary<string, object> { { "form", "form-organisme" } })">
+            Enregistrer
+        </AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Organisme Organisme { get; set; } = new();
+
+    private bool EstCreation => Organisme.Id == Ulid.Empty;
+    private bool _enregistrement;
+    private string? _erreur;
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        _erreur = null;
+
+        var (ok, erreur) = EstCreation
+            ? await CreerAsync()
+            : await Organismes.ModifierAsync(Organisme);
+
+        _enregistrement = false;
+        if (!ok)
+        {
+            _erreur = erreur;
+            return;
+        }
+
+        Dialog.Close(DialogResult.Ok(Organisme));
+    }
+
+    private async Task<(bool, string?)> CreerAsync()
+    {
+        var (ok, erreur, _) = await Organismes.CreerAsync(Organisme);
+        return (ok, erreur);
+    }
+}

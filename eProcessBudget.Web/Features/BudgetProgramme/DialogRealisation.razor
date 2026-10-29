@@ -1,0 +1,66 @@
+@inject IIndicateurService Indicateurs
+@inject IProgrammeService Programmes
+
+@* Saisie d'une réalisation : valeur, commentaire, justification de l'écart (obligatoire si la cible n'est pas atteinte), responsable ayant transmis. *@
+
+<MudDialog>
+    <DialogContent>
+        <p class="text-sm text-gray-700 mb-1">@Ligne.Code — @Ligne.Libelle</p>
+        <p class="text-xs text-gray-500 mb-4">Cible : @Formats.Nombre(Ligne.Cible) @Ligne.Unite · @(Ligne.Sens == SensEvolution.BaisseAttendue ? "baisse attendue" : "hausse attendue")</p>
+
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+
+        <div class="space-y-4">
+            <MudNumericField T="decimal?" @bind-Value="_saisie.Valeur" Label="@($"Valeur réalisée ({Ligne.Unite})")" Immediate="true"
+                             Variant="Variant.Outlined" Margin="Margin.Dense" />
+            @if (_saisie.Valeur is { } v)
+            {
+                var atteinte = CalculsBudgetProgramme.EstAtteinte(v, Ligne.Cible, Ligne.Sens);
+                <p class="text-sm">
+                    Taux d'atteinte : <strong>@Formats.Taux(CalculsBudgetProgramme.TauxAtteinte(v, Ligne.Cible, Ligne.Sens))</strong>
+                    @if (atteinte == false) { <span class="text-red-700"> — cible non atteinte : justifiez l'écart.</span> }
+                </p>
+            }
+            <MudTextField @bind-Value="_saisie.Justification" Label="Justification de l'écart" Lines="2" MaxLength="1000" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField @bind-Value="_saisie.Commentaire" Label="Commentaire" Lines="2" MaxLength="1000" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <ChoixReference Label="Transmis par" Elements="_responsables" HelperText="Responsable qui a transmis la donnée au service financier."
+                            Value="_saisie.TransmisParId" ValueChanged="v => _saisie.TransmisParId = v" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public LigneRealisation Ligne { get; set; } = null!;
+    [Parameter] public Ulid PeriodeId { get; set; }
+
+    private SaisieRealisation _saisie = new();
+    private List<ElementListe> _responsables = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _saisie = new SaisieRealisation
+        {
+            IndicateurId = Ligne.IndicateurId, PeriodeId = PeriodeId, Valeur = Ligne.Valeur,
+            Commentaire = Ligne.Commentaire, Justification = Ligne.Justification, TransmisParId = Ligne.TransmisParId
+        };
+        _responsables = await Programmes.ListerResponsablesPossiblesAsync();
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Indicateurs.EnregistrerRealisationAsync(_saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

@@ -1,0 +1,76 @@
+@inject IUtilisateurService Utilisateurs
+@inject IAuthentificationService Authentification
+
+@*
+    Définition d'un mot de passe (provisoire) par un administrateur : premier accès, ou
+    compte dont l'utilisateur a perdu son mot de passe sans e-mail. Le compte est débloqué
+    et ses sessions ouvertes se ferment.
+*@
+
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_saisie" OnValidSubmit="EnregistrerAsync" id="form-mot-de-passe">
+            <DataAnnotationsValidator />
+
+            @if (!string.IsNullOrEmpty(_erreur))
+            {
+                <div class="mb-4">
+                    <AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert>
+                </div>
+            }
+
+            <p class="text-sm text-gray-600 mb-4">
+                Nouveau mot de passe pour <strong>@NomPrenoms</strong>. Transmettez-le par un canal sûr ;
+                l'utilisateur pourra ensuite le changer depuis « Mon mot de passe ».
+            </p>
+
+            <div class="space-y-4">
+                <MudTextField @bind-Value="_saisie.NouveauMotDePasse" Label="Mot de passe"
+                              InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              MaxLength="128" For="() => _saisie.NouveauMotDePasse"
+                              HelperText="@Authentification.DescriptionPolitique"
+                              UserAttributes="@(new() { ["autocomplete"] = "new-password" })" />
+
+                <MudTextField @bind-Value="_saisie.Confirmation" Label="Confirmation"
+                              InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              MaxLength="128" For="() => _saisie.Confirmation"
+                              UserAttributes="@(new() { ["autocomplete"] = "new-password" })" />
+            </div>
+        </EditForm>
+    </DialogContent>
+
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Type="submit" Icone="check-circle" EnChargement="_enregistrement"
+                   AttributsSupplementaires="@(new Dictionary<string, object> { { "form", "form-mot-de-passe" } })">
+            Enregistrer
+        </AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Ulid UtilisateurId { get; set; }
+    [Parameter] public string NomPrenoms { get; set; } = "";
+
+    private readonly SaisieNouveauMotDePasse _saisie = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        _erreur = null;
+
+        var (ok, erreur) = await Utilisateurs.DefinirMotDePasseAsync(UtilisateurId, _saisie.NouveauMotDePasse);
+
+        _enregistrement = false;
+        if (!ok)
+        {
+            _erreur = erreur;
+            return;
+        }
+
+        Dialog.Close(DialogResult.Ok(true));
+    }
+}

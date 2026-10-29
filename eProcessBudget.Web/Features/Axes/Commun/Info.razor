@@ -1,0 +1,11 @@
+@* Un libellé et sa valeur dans une fiche (« — » si vide). À placer dans un <dl>. *@
+
+<div>
+    <dt class="text-xs text-gray-500">@Libelle</dt>
+    <dd class="font-medium text-gray-900">@(string.IsNullOrWhiteSpace(Valeur) ? "—" : Valeur)</dd>
+</div>
+
+@code {
+    [Parameter] public string Libelle { get; set; } = "";
+    [Parameter] public string? Valeur { get; set; }
+}

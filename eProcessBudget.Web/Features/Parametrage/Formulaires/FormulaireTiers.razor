@@ -1,0 +1,48 @@
+@inherits FormulaireBase<Tiers>
+@inject IReferentielService<CompteComptable> ServiceCompteComptable
+@inject IReferentielService<ListeValeur> ServiceListeValeur
+@inject IReferentielService<Tiers> ServiceTiers
+
+@* Formulaire de saisie : Tiers. Généré à l'identique pour tous les référentiels ; les règles sont dans CatalogueReferentiels. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <MudTextField @bind-Value="Element.Code" Label="Code" MaxLength="20" Required="true" RequiredError="Code : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <ChoixEnum TEnum="TypeTiers" Label="Type" Libelles="LibellesParametrage.TypeTiers" @bind-Value="Element.TypeTiers" />
+    <MudTextField @bind-Value="Element.RaisonSociale" Label="Raison sociale" MaxLength="250" Required="true" RequiredError="Raison sociale : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+    <MudTextField @bind-Value="Element.Sigle" Label="Sigle" MaxLength="30"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <div><ChoixReference Label="Catégorie" Elements="_categories"
+                    Value="Element.CategorieEntiteId" ValueChanged="v => Element.CategorieEntiteId = v" /></div>
+    <div class="sm:col-span-2"><ChoixReference Label="Entité de rattachement" Elements="_tiers"
+                    Value="Element.TiersParentId" ValueChanged="v => Element.TiersParentId = v" /></div>
+    <MudTextField @bind-Value="Element.IdentifiantFiscal" Label="Identifiant fiscal" MaxLength="30"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Telephone" Label="Téléphone" MaxLength="30"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Email" Label="E-mail" MaxLength="150"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+    <MudTextField @bind-Value="Element.Adresse" Label="Adresse" MaxLength="300"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+    <div><ChoixReference Label="Compte général" Elements="_comptesGeneraux"
+                    Value="Element.CompteGeneralId" ValueChanged="v => Element.CompteGeneralId = v" /></div>
+    <div><ChoixReference Label="Compte auxiliaire" Elements="_comptesAuxiliaires"
+                    Value="Element.CompteAuxiliaireId" ValueChanged="v => Element.CompteAuxiliaireId = v" /></div>
+</div>
+
+@code {
+    private List<ElementListe> _categories = new();
+    private List<ElementListe> _tiers = new();
+    private List<ElementListe> _comptesGeneraux = new();
+    private List<ElementListe> _comptesAuxiliaires = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _categories = await ServiceListeValeur.ListerPourSelectionAsync(l => l.Categorie == CategoriesListeValeur.CategorieEntite);
+        _tiers = await ServiceTiers.ListerPourSelectionAsync();
+        _comptesGeneraux = await ServiceCompteComptable.ListerPourSelectionAsync(c => c.TypeCompte == TypeCompte.General);
+        _comptesAuxiliaires = await ServiceCompteComptable.ListerPourSelectionAsync(c => c.TypeCompte == TypeCompte.Auxiliaire);
+        _tiers.RemoveAll(e => e.Id == Element.Id);
+    }
+}

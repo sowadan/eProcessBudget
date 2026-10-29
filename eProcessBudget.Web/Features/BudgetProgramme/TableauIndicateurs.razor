@@ -1,0 +1,105 @@
+@page "/budget-programme/tableau-indicateurs"
+@inject IIndicateurService Indicateurs
+@inject IReferentielService<Programme> ServiceProgramme
+
+<PageTitle>Tableau des indicateurs — Budget-programme</PageTitle>
+
+@*
+    Tableau des indicateurs principaux des programmes assortis de cibles (§ 3.3.3) : au
+    niveau global, ou pour un programme (niveau actions). Les lignes incomplètes (référence
+    ou cible manquante) empêchent la validation du cycle (règle § 3.4).
+*@
+
+<AutoriseSi DroitsRequis="CatalogueReferentiels.LectureBudgetProgramme">
+    <PageHeader Titre="Tableau des indicateurs" Description="Valeurs de référence et cibles N à N+2 de chaque indicateur.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span>
+            <a href="/budget-programme" class="hover:underline">Budget-programme</a>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-6">
+        <div class="flex flex-col sm:flex-row gap-3">
+            <SelecteurCycle Value="_cycle" ValueChanged="ChangerCycleAsync" />
+            <ChoixReference Label="Programme (tous si vide)" Elements="_programmes" Value="_programmeId" ValueChanged="ChangerProgrammeAsync" />
+        </div>
+    </AppCard>
+
+    @if (_cycle is not null)
+    {
+        <AppCard PaddingCorps="false">
+            <ChildContent>
+                @if (_lignes.Count == 0)
+                {
+                    <EtatVide Icone="chart-bar" Titre="Aucun indicateur" Message="Définissez les indicateurs dans Budget-programme › Indicateurs." />
+                }
+                else
+                {
+                    <div class="zone-defilante">
+                        <MudSimpleTable Dense="true" Hover="true" Bordered="false">
+                            <thead>
+                                <tr>
+                                    <th>Programme / action</th><th>Indicateur</th><th>Unité</th><th>Sens</th>
+                                    <th style="text-align:right">Référence</th>
+                                    @foreach (var a in Annees)
+                                    {
+                                        <th style="text-align:right">Cible @a</th>
+                                    }
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var l in _lignes)
+                                {
+                                    var complet = l.EstComplet(Annees);
+                                    <tr class="@(l.EstActif ? "" : "opacity-50")">
+                                        <td class="whitespace-nowrap">
+                                            <span class="font-mono text-xs font-semibold">@l.Programme</span>
+                                            @if (l.Action is not null) { <span class="font-mono text-xs text-gray-500"> › @l.Action</span> }
+                                        </td>
+                                        <td><span class="text-sm">@l.Code — @l.Libelle</span></td>
+                                        <td class="text-sm text-gray-500">@l.Unite</td>
+                                        <td class="text-sm text-gray-500">@(l.Sens == SensEvolution.BaisseAttendue ? "↓" : "↑")</td>
+                                        <td class="tabular-nums text-right">@(l.ValeurReference is null ? "—" : $"{Formats.Nombre(l.ValeurReference)} ({l.AnneeReference})")</td>
+                                        @foreach (var a in Annees)
+                                        {
+                                            <td class="tabular-nums text-right">@(l.Cibles.TryGetValue(a, out var c) ? Formats.Nombre(c) : "—")</td>
+                                        }
+                                        <td>
+                                            @if (!complet)
+                                            {
+                                                <AppBadge Variante="warning" Petit="true">Incomplet</AppBadge>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </div>
+                }
+            </ChildContent>
+            <PiedContent>
+                <p class="text-xs text-gray-500">
+                    @_lignes.Count indicateur(s), dont @_lignes.Count(l => !l.EstComplet(Annees)) incomplet(s) pour le cycle @_cycle.Libelle.
+                </p>
+            </PiedContent>
+        </AppCard>
+    }
+</AutoriseSi>
+
+@code {
+    private LigneCycle? _cycle;
+    private Ulid? _programmeId;
+    private List<ElementListe> _programmes = new();
+    private List<LigneTableauIndicateur> _lignes = new();
+
+    private int[] Annees => _cycle is null ? [] : Enumerable.Range(_cycle.AnneeBase, _cycle.AnneeFin - _cycle.AnneeBase + 1).ToArray();
+
+    protected override async Task OnInitializedAsync() => _programmes = await ServiceProgramme.ListerPourSelectionAsync(actifsSeulement: false);
+
+    private async Task ChangerCycleAsync(LigneCycle? c) { _cycle = c; await ChargerAsync(); }
+    private async Task ChangerProgrammeAsync(Ulid? id) { _programmeId = id; await ChargerAsync(); }
+
+    private async Task ChargerAsync()
+        => _lignes = _cycle is null ? new() : await Indicateurs.TableauAsync(_cycle.Id, _programmeId);
+}

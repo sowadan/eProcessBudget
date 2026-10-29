@@ -1,0 +1,54 @@
+@inject IPaiementService Service
+
+@* Paiement d'un engagement validé : date dans l'exercice ouvert, montant au plus égal au reste à payer. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (_erreur is not null)
+        {
+            <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+        }
+        <p class="text-sm text-gray-600 mb-3">Reste à payer : <span class="font-semibold tabular-nums">@Formats.Montant(ResteAPayer)</span></p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <MudTextField @bind-Value="_saisie.NumeroPiece" Label="Numéro de pièce" MaxLength="50" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudDatePicker Date="Date" DateChanged="d => _saisie.Date = d is { } v ? DateOnly.FromDateTime(v) : null" Label="Date du paiement"
+                           DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudNumericField T="decimal" @bind-Value="_saisie.Montant" Label="Montant" Min="0" Max="ResteAPayer" Format="N2" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <ChoixEnum TEnum="ModePaiement" Label="Mode" Libelles="LibellesExecution.ModePaiement" @bind-Value="_saisie.Mode" />
+            <ChoixReference Label="Facture payée (obligatoire, sauf versement d'appui)" Elements="_factures" Value="_saisie.FactureId" ValueChanged="v => _saisie.FactureId = v" />
+            <ChoixReference Label="Compte débité (facultatif)" Elements="_comptes" Value="_saisie.CompteBancaireId" ValueChanged="v => _saisie.CompteBancaireId = v" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <AppButton Variante="ghost" OnClick="() => Dialog.Cancel()">Annuler</AppButton>
+        <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public Ulid EngagementId { get; set; }
+    [Parameter] public decimal ResteAPayer { get; set; }
+
+    private SaisiePaiement _saisie = new();
+    private List<ElementListe> _factures = new(), _comptes = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    private DateTime? Date => _saisie.Date?.ToDateTime(TimeOnly.MinValue);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _saisie = new SaisiePaiement { EngagementId = EngagementId, Date = DateOnly.FromDateTime(DateTime.Today), Montant = ResteAPayer };
+        _factures = await Service.ListerFacturesAsync(EngagementId);
+        _comptes = await Service.ListerComptesAsync();
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.EnregistrerAsync(_saisie);
+        _enregistrement = false;
+        if (ok) Dialog.Close(DialogResult.Ok(true));
+    }
+}

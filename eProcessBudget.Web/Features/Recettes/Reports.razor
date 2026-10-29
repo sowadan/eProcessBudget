@@ -1,0 +1,162 @@
+@page "/recettes/reports"
+@inject IReportRessourceService Service
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Reports de ressources — Recettes</PageTitle>
+
+@*
+    Reports de ressources antérieures (cahier fonctionnel § 3.2.8 et 3.9.2) : trésorerie sans
+    déduction d'encours, fournisseurs débiteurs, taxes et recettes antérieures, avoirs sur
+    l'État. Positionnés ou non sur un compte bancaire.
+*@
+
+<AutoriseSi DroitsRequis="AccesRecettes.Lecture">
+    <PageHeader Titre="Reports de ressources antérieures" Description="Reliquats des exercices passés, positionnés ou non sur les comptes bancaires.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span><a href="/recettes" class="hover:underline">Recettes</a>
+        </BreadcrumbContent>
+        <ActionsContent>
+            @if (Saisissable)
+            {
+                <AppButton Icone="plus" OnClick="() => Editer(null)">Nouveau report</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-4">
+        <SelecteurExercice Value="_exercice" ValueChanged="ChangerExerciceAsync" />
+    </AppCard>
+
+    @if (_saisie is not null)
+    {
+        <AppCard ClasseSup="mb-4" Titre="@(_saisie.Id == Ulid.Empty ? "Nouveau report" : "Modifier le report")">
+            @if (_erreur is not null)
+            {
+                <div class="mb-3"><AppAlert Variante="danger" Titre="Enregistrement impossible">@_erreur</AppAlert></div>
+            }
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 items-center">
+                <div class="sm:col-span-2">
+                    <ChoixReference Label="Nature du report" Elements="_natures" Obligatoire="true" Value="_saisie.NatureRecetteId" ValueChanged="v => _saisie.NatureRecetteId = v" />
+                </div>
+                <MudNumericField T="decimal" @bind-Value="_saisie.Montant" Label="Montant constaté" Min="0" Format="N2" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudNumericField T="decimal?" @bind-Value="_saisie.MontantPrevu" Label="Montant inscrit au budget" Min="0" Format="N2" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                 HelperText="Prévision du compte sur chiffres (facultatif)." />
+                <MudSwitch T="bool" @bind-Value="_saisie.EstPositionne" Label="Positionné sur un compte bancaire" Color="Color.Primary" />
+                <div class="sm:col-span-4">
+                    <MudTextField @bind-Value="_saisie.Commentaire" Label="Commentaire" MaxLength="500" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 mt-4">
+                <AppButton Variante="ghost" OnClick="() => { _saisie = null; _erreur = null; }">Annuler</AppButton>
+                <AppButton Icone="check-circle" EnChargement="_enregistrement" OnClick="EnregistrerAsync">Enregistrer</AppButton>
+            </div>
+        </AppCard>
+    }
+
+    @if (_exercice is not null)
+    {
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <AppStatCard Label="Total reporté" Valeur="@Formats.Montant(_lignes.Sum(l => l.Montant))" Icone="collection" />
+            <AppStatCard Label="Positionné" Valeur="@Formats.Montant(_lignes.Where(l => l.EstPositionne).Sum(l => l.Montant))" Icone="check-circle"
+                         CouleurFond="#DCFCE7" CouleurIcone="#15803D" />
+            <AppStatCard Label="Acquis non positionné" Valeur="@Formats.Montant(_lignes.Where(l => !l.EstPositionne).Sum(l => l.Montant))" Icone="exclamation"
+                         CouleurFond="#FEE2E2" CouleurIcone="#B91C1C" />
+        </div>
+
+        <AppCard PaddingCorps="false">
+            @if (_lignes.Count == 0)
+            {
+                <EtatVide Icone="clock" Titre="Aucun report sur l'exercice" />
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Hover="true">
+                    <thead><tr><th>Nature</th><th>Commentaire</th><th>Positionnement</th><th class="text-right">Inscrit au budget</th><th class="text-right">Montant constaté</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var r in _lignes)
+                        {
+                            <tr>
+                                <td>@r.Nature</td>
+                                <td class="text-xs text-gray-600">@r.Commentaire</td>
+                                <td>
+                                    @if (r.EstPositionne) { <AppBadge Variante="success" Petit="true">Positionné</AppBadge> }
+                                    else { <AppBadge Variante="warning" Petit="true">Non positionné</AppBadge> }
+                                </td>
+                                <td class="tabular-nums text-right">@Formats.Montant(r.MontantPrevu)</td>
+                                <td class="tabular-nums text-right">@Formats.Montant(r.Montant)</td>
+                                <td class="text-right whitespace-nowrap">
+                                    @if (Saisissable)
+                                    {
+                                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => Editer(r)" />
+                                        <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerAsync(r)" />
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </AppCard>
+    }
+</AutoriseSi>
+
+@code {
+    private LigneExercice? _exercice;
+    private List<LigneReportRessource> _lignes = new();
+    private List<ElementListe> _natures = new();
+    private SaisieReportRessource? _saisie;
+    private string? _erreur;
+    private bool _peutSaisir, _enregistrement;
+
+    private bool Saisissable => _peutSaisir && _exercice is { Statut: not StatutExercice.Cloture };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutSaisir = (await Droits.ObtenirDroitsAsync(await UserContext.ObtenirUserIdAsync())).Contains(TypeDroit.PrevisionRecetteSaisir);
+        _natures = await Service.ListerNaturesAsync();
+    }
+
+    private async Task ChangerExerciceAsync(LigneExercice? e)
+    {
+        _exercice = e;
+        _saisie = null;
+        await ChargerAsync();
+    }
+
+    private async Task ChargerAsync() => _lignes = _exercice is null ? new() : await Service.ListerAsync(_exercice.Id);
+
+    private void Editer(LigneReportRessource? r)
+    {
+        _erreur = null;
+        _saisie = r is null
+            ? new SaisieReportRessource { ExerciceId = _exercice!.Id }
+            : new SaisieReportRessource { Id = r.Id, ExerciceId = _exercice!.Id, NatureRecetteId = r.NatureRecetteId, Montant = r.Montant, MontantPrevu = r.MontantPrevu, EstPositionne = r.EstPositionne, Commentaire = r.Commentaire };
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        _enregistrement = true;
+        (var ok, _erreur) = await Service.EnregistrerAsync(_saisie!);
+        _enregistrement = false;
+        if (!ok) return;
+        _saisie = null;
+        Snackbar.Add("Report enregistré.", Severity.Success);
+        await ChargerAsync();
+    }
+
+    private async Task SupprimerAsync(LigneReportRessource r)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, "Supprimer le report" }, { x => x.Message, $"Le report « {r.Nature} » ({Formats.Montant(r.Montant)}) est supprimé." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+        var (ok, erreur) = await Service.SupprimerAsync(r.Id);
+        Snackbar.Add(ok ? "Report supprimé." : erreur!, ok ? Severity.Success : Severity.Error);
+        if (ok) await ChargerAsync();
+    }
+}

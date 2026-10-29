@@ -1,0 +1,310 @@
+@inject ITableauDeBordService Service
+@inject IDroitService Droits
+@inject IUserContextService UserContext
+@inject NavigationManager Nav
+@using eProcessBudget.Web.Features.Axes.Commun
+
+@*
+    Tableau de bord budgétaire (cahier fonctionnel § 3.11) : indicateurs clés du budget et du
+    budget-programme, restreints au périmètre de lecture, recalculés au plus toutes les
+    5 minutes (bouton « Actualiser » pour forcer). Affiché sur la page d'accueil.
+*@
+
+<FiltresConsommation Filtre="_filtre" Exercice="_exercice" ExerciceChanged="e => _exercice = e" OnChange="() => ChargerAsync(false)" />
+
+@if (_chargement && _tdb is null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+}
+
+@if (_tdb is { } t)
+{
+    <div class="flex items-center justify-between mb-3">
+        <p class="text-xs text-gray-500">
+            Exercice @t.Annee · @(t.JusquAu is { } d ? $"situation au {d:dd/MM/yyyy}" : "situation courante")
+            · calculé à @t.CalculeLe.ToLocalTime().ToString("HH:mm")
+        </p>
+        <AppButton Variante="ghost" Taille="sm" Icone="clock" EnChargement="_chargement" OnClick="() => ChargerAsync(true)">Actualiser</AppButton>
+    </div>
+
+    <!-- ═══ Budget global ═══════════════════════════════════════════════════ -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <AppStatCard Label="Budget global (dotation totale)" Valeur="@Formats.Montant(t.Total.DotationTotale)" Icone="collection"
+                     SousTitre="@($"Initial {Formats.Montant(t.Total.MontantInitial)} · ajusté {Formats.Montant(t.Total.PrevisionAjustee)}")" />
+        <AppStatCard Label="Taux global de consommation" Valeur="@Formats.Taux(t.Total.TauxConsommationYCReports)" Icone="check-circle"
+                     SousTitre="@($"Payé {Formats.Montant(t.Total.PaiementsTotal)}")" CouleurFond="#DCFCE7" CouleurIcone="#15803D" />
+        <AppStatCard Label="Taux d'engagement" Valeur="@Formats.Taux(t.Total.TauxEngagementYCReports)" Icone="clipboard-list"
+                     SousTitre="@($"Engagé {Formats.Montant(t.Total.AETotal)}")" CouleurFond="#FEF3C7" CouleurIcone="#B45309" />
+        <AppStatCard Label="Alertes" Valeur="@t.Alertes.Count.ToString()" Icone="exclamation"
+                     SousTitre="@($"{t.DepassementsEnAttente} dépassement(s) en attente de décision")"
+                     CouleurFond="@(t.Alertes.Count > 0 ? "#FEE2E2" : "#EFF6FF")" CouleurIcone="@(t.Alertes.Count > 0 ? "#B91C1C" : "#1D4ED8")" />
+    </div>
+
+    <AppCard ClasseSup="mb-4" Titre="Budget global par volet" SousTitre="Prévu (dotation totale) et réalisé (payé), avec l'écart entre prévisions et engagements.">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            @foreach (var v in t.Volets)
+            {
+                <div>
+                    <p class="font-medium text-gray-800 mb-2">@v.Volet</p>
+                    <Jauge Libelle="@($"Réalisé {Formats.Montant(v.Montants.PaiementsTotal)} / {Formats.Montant(v.Montants.DotationTotale)}")" Taux="v.Montants.TauxConsommationYCReports" />
+                    <dl class="mt-3 space-y-1 text-xs text-gray-600">
+                        <div class="flex justify-between"><dt>Prévision initiale</dt><dd class="tabular-nums">@Formats.Montant(v.Montants.MontantInitial)</dd></div>
+                        <div class="flex justify-between"><dt>Prévision ajustée</dt><dd class="tabular-nums">@Formats.Montant(v.Montants.PrevisionAjustee)</dd></div>
+                        <div class="flex justify-between"><dt>Engagé (AE / AD)</dt><dd class="tabular-nums">@Formats.Montant(v.Montants.AETotal)</dd></div>
+                        <div class="flex justify-between font-medium @(v.Montants.Disponible < 0 ? "text-red-700" : "")"><dt>Écart ajustée − engagé</dt><dd class="tabular-nums">@Formats.Montant(v.Montants.PrevisionAjustee - v.Montants.AETotal)</dd></div>
+                    </dl>
+                </div>
+            }
+        </div>
+    </AppCard>
+
+    <CarteIndicateursEntretien Indicateurs="t.Entretien" />
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4">
+        <AppCard ClasseSup="xl:col-span-2" Titre="Évolution mensuelle des dépenses" SousTitre="Engagé et payé cumulés, face à une consommation linéaire de la dotation.">
+            @if (t.Evolution.Count == 0)
+            {
+                <EtatVide Icone="chart-bar" Titre="Aucune période" />
+            }
+            else
+            {
+                <GraphiqueCourbes Etiquettes="@(t.Evolution.Select(p => p.Libelle).ToArray())"
+                                  Series="@([("Engagé cumulé", t.Evolution.Select(p => (double)p.EngageCumule).ToArray()),
+                                            ("Payé cumulé", t.Evolution.Select(p => (double)p.PayeCumule).ToArray()),
+                                            ("Prévision linéaire", t.Evolution.Select(p => (double)p.PrevisionCumulee).ToArray())])" />
+            }
+        </AppCard>
+        <AppCard Titre="Top 5 des rubriques" SousTitre="Les plus consommées (payé).">
+            @if (!t.TopRubriques.Any())
+            {
+                <EtatVide Icone="chart-bar" Titre="Aucun paiement" />
+            }
+            else
+            {
+                <ol class="space-y-3">
+                    @foreach (var r in t.TopRubriques)
+                    {
+                        <li>
+                            <p class="text-sm truncate" title="@r.Libelle">@r.Libelle</p>
+                            <Barre Taux="r.Montants.TauxConsommationYCReports" />
+                            <p class="text-xs text-gray-500 tabular-nums">@Formats.Montant(r.Montants.PaiementsTotal) payés sur @Formats.Montant(r.Montants.DotationTotale)</p>
+                        </li>
+                    }
+                </ol>
+            }
+        </AppCard>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
+        <AppCard>
+            <TitreContent>
+                <div class="flex items-center justify-between gap-3 w-full">
+                    <h3 class="text-base font-semibold text-gray-800">Répartition budget-programme</h3>
+                    <MudSelect T="Regroupement" @bind-Value="_repartitionProgramme" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:180px">
+                        <MudSelectItem T="Regroupement" Value="Regroupement.Programme">Programme</MudSelectItem>
+                        <MudSelectItem T="Regroupement" Value="Regroupement.Action">Action</MudSelectItem>
+                        <MudSelectItem T="Regroupement" Value="Regroupement.Activite">Activité</MudSelectItem>
+                    </MudSelect>
+                </div>
+            </TitreContent>
+            <ChildContent>
+                <GraphiqueRepartition Lignes="@(_repartitionProgramme switch { Regroupement.Action => t.ParAction, Regroupement.Activite => t.ParActivite, _ => t.ParProgramme })" />
+            </ChildContent>
+        </AppCard>
+        <AppCard>
+            <TitreContent>
+                <div class="flex items-center justify-between gap-3 w-full">
+                    <h3 class="text-base font-semibold text-gray-800">Répartition budgétaire</h3>
+                    <MudSelect T="Regroupement" @bind-Value="_repartitionBudget" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:180px">
+                        <MudSelectItem T="Regroupement" Value="Regroupement.Rubrique">Rubrique</MudSelectItem>
+                        <MudSelectItem T="Regroupement" Value="Regroupement.SousRubrique">Sous-rubrique</MudSelectItem>
+                        <MudSelectItem T="Regroupement" Value="Regroupement.Ligne">Ligne (10 premières)</MudSelectItem>
+                        <MudSelectItem T="Regroupement" Value="Regroupement.Projet">Projet</MudSelectItem>
+                    </MudSelect>
+                </div>
+            </TitreContent>
+            <ChildContent>
+                <GraphiqueRepartition Lignes="@(_repartitionBudget switch { Regroupement.SousRubrique => t.ParSousRubrique, Regroupement.Ligne => t.ParLigne, Regroupement.Projet => t.ParProjet, _ => t.ParRubrique })" />
+            </ChildContent>
+        </AppCard>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
+        <AppCard PaddingCorps="false" Titre="Alertes de seuils" SousTitre="Dotations dont l'engagement atteint un seuil paramétré (80 / 90 / 100 % par défaut).">
+            @if (t.Alertes.Count == 0)
+            {
+                <EtatVide Icone="check-circle" Titre="Aucun seuil atteint" />
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Hover="true">
+                    <thead><tr><th>Ligne</th><th style="min-width:150px">Engagement</th><th class="text-right">Seuil</th></tr></thead>
+                    <tbody>
+                        @foreach (var a in t.Alertes)
+                        {
+                            <tr class="cursor-pointer" @onclick="() => Nav.NavigateTo(DetailDotation.Lien(a.Dotation.Id))">
+                                <td class="text-xs"><span class="font-mono font-semibold">@a.Dotation.LigneCode</span> @a.Dotation.LigneLibelle <span class="text-gray-400">@a.Dotation.Imputation</span></td>
+                                <td><Barre Taux="a.Dotation.Montants.TauxEngagementYCReports" /></td>
+                                <td class="tabular-nums text-right"><AppBadge Variante="@(a.Seuil >= 100 ? "danger" : "warning")" Petit="true">@Formats.Pourcentage(a.Seuil)</AppBadge></td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </AppCard>
+        <AppCard PaddingCorps="false" Titre="Engagements, paiements et reliquats par ligne" SousTitre="Les 10 lignes les plus engagées.">
+            @if (t.ParLigne.Count == 0)
+            {
+                <EtatVide Icone="collection" Titre="Aucune dotation" />
+            }
+            else
+            {
+                <MudSimpleTable Dense="true">
+                    <thead><tr><th>Ligne</th><th class="text-right">Engagé</th><th class="text-right">Payé</th><th class="text-right">Reliquat</th></tr></thead>
+                    <tbody>
+                        @foreach (var l in t.ParLigne)
+                        {
+                            <tr>
+                                <td class="text-xs">@l.Libelle</td>
+                                <td class="tabular-nums text-right text-xs">@Formats.Montant(l.Montants.AETotal)</td>
+                                <td class="tabular-nums text-right text-xs">@Formats.Montant(l.Montants.PaiementsTotal)</td>
+                                <td class="tabular-nums text-right text-xs">@Formats.Montant(l.Montants.Ecart)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </AppCard>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
+        <AppCard PaddingCorps="false" Titre="Exécution des AE et CP par programme" SousTitre="@(t.Cycle is null ? "Aucun cycle de programmation rattaché à l'exercice." : $"Programmation de l'année dans le cycle « {t.Cycle} ».")">
+            @if (t.AECP.Count == 0)
+            {
+                <EtatVide Icone="clock" Titre="Aucune donnée" />
+            }
+            else
+            {
+                <MudSimpleTable Dense="true">
+                    <thead><tr><th>Programme</th><th style="min-width:130px">AE</th><th style="min-width:130px">CP</th></tr></thead>
+                    <tbody>
+                        @foreach (var l in t.AECP)
+                        {
+                            <tr>
+                                <td class="text-xs">@l.Programme</td>
+                                <td><Barre Taux="l.TauxAE" /></td>
+                                <td><Barre Taux="l.TauxCP" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+            @if (t.Triennal.Count > 0)
+            {
+                <div class="px-6 py-3 border-t border-gray-100">
+                    <p class="text-xs font-semibold text-gray-600 mb-2">Budget-programme triennal</p>
+                    <div class="grid grid-cols-3 gap-3 text-xs">
+                        @foreach (var a in t.Triennal)
+                        {
+                            <div><p class="text-gray-500">@a.Annee</p><p class="tabular-nums">AE @Formats.Montant(a.AE)</p><p class="tabular-nums">CP @Formats.Montant(a.CP)</p></div>
+                        }
+                    </div>
+                </div>
+            }
+        </AppCard>
+        <AppCard PaddingCorps="false" Titre="Taux d'avancement par site" SousTitre="Payé rapporté aux engagements de chaque site.">
+            @if (t.ParSite.Count == 0)
+            {
+                <EtatVide Icone="office-building" Titre="Aucune dotation" />
+            }
+            else
+            {
+                <MudSimpleTable Dense="true">
+                    <thead><tr><th>Site</th><th class="text-right">Engagé</th><th style="min-width:150px">Payé / engagé</th></tr></thead>
+                    <tbody>
+                        @foreach (var s in t.ParSite)
+                        {
+                            <tr>
+                                <td class="text-xs @(s.Id is null ? "italic text-gray-500" : "")">@s.Libelle</td>
+                                <td class="tabular-nums text-right text-xs">@Formats.Montant(s.Montants.AETotal)</td>
+                                <td><Barre Taux="s.Montants.TauxConsommationAD" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </AppCard>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <AppCard PaddingCorps="false" Titre="Indicateurs de performance" SousTitre="Dernière réalisation validée de l'exercice face à la cible, par programme.">
+            @if (t.Performance.Count == 0)
+            {
+                <EtatVide Icone="chart-bar" Titre="Aucun programme" />
+            }
+            else
+            {
+                <MudSimpleTable Dense="true">
+                    <thead><tr><th>Programme</th><th class="text-right">Indicateurs mesurés</th><th class="text-right">Atteints</th><th style="min-width:150px">Atteinte moyenne</th></tr></thead>
+                    <tbody>
+                        @foreach (var p in t.Performance)
+                        {
+                            <tr>
+                                <td class="text-xs"><span class="font-mono font-semibold">@p.Programme</span> @p.Libelle</td>
+                                <td class="tabular-nums text-right text-xs">@p.NbMesures / @p.NbIndicateurs</td>
+                                <td class="tabular-nums text-right text-xs">@p.NbAtteints</td>
+                                <td><Barre Taux="p.TauxAtteinteMoyen" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </AppCard>
+        <AppCard PaddingCorps="false" Titre="Recettes réalisées / prévues">
+            @if (t.Recettes.Count == 0)
+            {
+                <EtatVide Icone="cash" Titre="Aucune recette visible" Message="Pas de prévision de recette, ou recettes hors de votre périmètre." />
+            }
+            else
+            {
+                <MudSimpleTable Dense="true">
+                    <thead><tr><th>Catégorie</th><th class="text-right">Prévu</th><th class="text-right">Encaissé</th><th style="min-width:150px">Recouvrement</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in t.Recettes)
+                        {
+                            <tr>
+                                <td class="text-xs">@r.Categorie</td>
+                                <td class="tabular-nums text-right text-xs">@Formats.Montant(r.Montants.PrevisionRetenue)</td>
+                                <td class="tabular-nums text-right text-xs">@Formats.Montant(r.Montants.Encaisse)</td>
+                                <td><Barre Taux="r.Montants.TauxRecouvrement" /></td>
+                            </tr>
+                        }
+                        <tr class="font-semibold bg-gray-50">
+                            <td class="text-xs">Total</td>
+                            <td class="tabular-nums text-right text-xs">@Formats.Montant(t.TotalRecettes.PrevisionRetenue)</td>
+                            <td class="tabular-nums text-right text-xs">@Formats.Montant(t.TotalRecettes.Encaisse)</td>
+                            <td><Barre Taux="t.TotalRecettes.TauxRecouvrement" /></td>
+                        </tr>
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </AppCard>
+    </div>
+}
+
+@code {
+    private readonly FiltreConsommation _filtre = new();
+    private LigneExercice? _exercice;
+    private TableauDeBord? _tdb;
+    private Regroupement _repartitionProgramme = Regroupement.Programme;
+    private Regroupement _repartitionBudget = Regroupement.Rubrique;
+    private bool _chargement;
+
+    private async Task ChargerAsync(bool forcer)
+    {
+        if (_filtre.ExerciceId == Ulid.Empty) { _tdb = null; return; }
+        _chargement = true;
+        _tdb = await Service.ObtenirAsync(_filtre, forcer);
+        _chargement = false;
+    }
+}

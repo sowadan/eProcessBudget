@@ -1,0 +1,32 @@
+@inherits FormulaireBase<Site>
+@inject IReferentielService<CompteComptable> ServiceCompteComptable
+
+@* Formulaire de saisie : Site. Généré à l'identique pour tous les référentiels ; les règles sont dans CatalogueReferentiels. *@
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <MudTextField @bind-Value="Element.Code" Label="Code" MaxLength="20" Required="true" RequiredError="Code : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <ChoixEnum TEnum="TypeSite" Label="Type" Libelles="LibellesParametrage.TypeSite" @bind-Value="Element.TypeSite" />
+    <MudTextField @bind-Value="Element.Nom" Label="Nom" MaxLength="150" Required="true" RequiredError="Nom : obligatoire."
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="sm:col-span-2" />
+    <MudTextField @bind-Value="Element.Region" Label="Région" MaxLength="100"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Prefecture" Label="Préfecture" MaxLength="100"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.Commune" Label="Commune" MaxLength="100"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudTextField @bind-Value="Element.AxeRoutier" Label="Axe routier" MaxLength="100"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudDatePicker Label="Mise en service" DateFormat="dd/MM/yyyy" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                   Date="@(Element.DateMiseEnService?.ToDateTime(TimeOnly.MinValue))"
+                   DateChanged="@(d => Element.DateMiseEnService = d is null ? null : DateOnly.FromDateTime(d.Value))" />
+    <div><ChoixReference Label="Compte tiers (lie le poste à ses recettes)" Elements="_comptesTiers"
+                    Value="Element.CompteTiersId" ValueChanged="v => Element.CompteTiersId = v" /></div>
+</div>
+
+@code {
+    private List<ElementListe> _comptesTiers = new();
+
+    protected override async Task OnInitializedAsync()
+        => _comptesTiers = await ServiceCompteComptable.ListerPourSelectionAsync(c => c.TypeCompte == TypeCompte.Auxiliaire);
+}

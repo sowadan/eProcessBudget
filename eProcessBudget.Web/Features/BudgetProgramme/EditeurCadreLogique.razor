@@ -1,0 +1,200 @@
+@page "/budget-programme/cadre-logique"
+@inject ICadreLogiqueService CadreService
+@inject IReferentielService<Programme> ServiceProgramme
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Cadre logique — Budget-programme</PageTitle>
+
+@*
+    Cadre logique d'un programme pour un cycle (§ 3.3.4) : objectif général › objectifs
+    spécifiques (un par action) › résultats immédiats, chacun avec indicateur, source de
+    vérification et risques. Modifiable tant que le cycle est en brouillon.
+*@
+
+<AutoriseSi DroitsRequis="CatalogueReferentiels.LectureBudgetProgramme">
+    <PageHeader Titre="Cadre logique" Description="Logique d'intervention d'un programme : objectifs, résultats, indicateurs, sources et risques.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span>
+            <a href="/budget-programme" class="hover:underline">Budget-programme</a>
+        </BreadcrumbContent>
+    </PageHeader>
+
+    <AppCard ClasseSup="mb-6">
+        <div class="flex flex-col sm:flex-row gap-3 sm:items-center">
+            <ChoixReference Label="Programme" Elements="_programmes" Value="_programmeId" ValueChanged="ChangerProgrammeAsync" />
+            <SelecteurCycle Value="_cycle" ValueChanged="ChangerCycleAsync" />
+        </div>
+    </AppCard>
+
+    @if (_cadre is not null)
+    {
+        var modifiable = _cadre.EstModifiable && _peutGerer;
+        var og = _cadre.Elements.FirstOrDefault(e => e.Type == TypeElementCL.ObjectifGeneral);
+
+        @if (_cadre.Anomalies.Count > 0)
+        {
+            <AppAlert Variante="warning" Titre="Cadre logique incomplet (bloque la validation du cycle)" ClasseSup="mb-4">
+                <ul class="list-disc ml-5">
+                    @foreach (var a in _cadre.Anomalies) { <li>@a</li> }
+                </ul>
+            </AppAlert>
+        }
+
+        @if (_cadre.Elements.Count == 0)
+        {
+            <AppCard>
+                <EtatVide Icone="clipboard-list" Titre="Cadre logique vide"
+                          Message="L'initialisation reprend l'objectif général du programme et l'objectif spécifique de chaque action.">
+                    @if (modifiable)
+                    {
+                        <AppButton Icone="plus" OnClick="InitialiserAsync">Initialiser depuis le programme</AppButton>
+                    }
+                </EtatVide>
+            </AppCard>
+        }
+        else
+        {
+            <div class="space-y-4">
+                @if (og is not null)
+                {
+                    <div class="rounded-xl border-2 p-4 bg-white" style="border-color: var(--app-secondaire);">
+                        @Element(og, modifiable)
+                    </div>
+                }
+
+                @foreach (var os in _cadre.Elements.Where(e => e.Type == TypeElementCL.ObjectifSpecifique))
+                {
+                    <div class="rounded-xl border border-gray-200 bg-white p-4 ml-0 md:ml-6">
+                        @Element(os, modifiable)
+                        <div class="mt-3 space-y-2 ml-0 md:ml-6">
+                            @foreach (var ri in _cadre.Elements.Where(e => e.Type == TypeElementCL.ResultatImmediat && e.ParentId == os.Id))
+                            {
+                                <div class="rounded-lg bg-gray-50 border border-gray-100 p-3">@Element(ri, modifiable)</div>
+                            }
+                            @if (modifiable)
+                            {
+                                <AppButton Variante="ghost" Taille="sm" Icone="plus" OnClick="() => AjouterResultatAsync(os)">Résultat immédiat</AppButton>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @if (modifiable)
+                {
+                    <div class="flex gap-2">
+                        <AppButton Variante="outline" Icone="plus" OnClick="AjouterObjectifSpecifiqueAsync">Objectif spécifique</AppButton>
+                        <AppButton Variante="ghost" OnClick="InitialiserAsync">Compléter depuis les actions</AppButton>
+                    </div>
+                }
+            </div>
+        }
+    }
+</AutoriseSi>
+
+@code {
+    private Ulid? _programmeId;
+    private LigneCycle? _cycle;
+    private List<ElementListe> _programmes = new();
+    private CadreLogique? _cadre;
+    private bool _peutGerer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutGerer = await ServiceProgramme.PeutGererAsync();
+        _programmes = await ServiceProgramme.ListerPourSelectionAsync();
+        _programmeId = _programmes.FirstOrDefault()?.Id;
+    }
+
+    private RenderFragment Element(ElementCadreLogique e, bool modifiable) => __builder =>
+    {
+        <div class="flex items-start gap-3">
+            <div class="flex-1 min-w-0">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                    @LibellesBudgetProgramme.ElementCadre[e.Type]@(e.Action is null ? "" : $" · Action {e.Action}")
+                </p>
+                <p class="text-sm text-gray-800 mt-0.5">@e.Libelle</p>
+                <div class="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-gray-600">
+                    <span><span class="text-gray-400">Indicateur :</span> @(e.Indicateur ?? "—")</span>
+                    <span><span class="text-gray-400">Source :</span> @(e.SourceVerification ?? "—")</span>
+                    @if (e.Type == TypeElementCL.ResultatImmediat)
+                    {
+                        <span><span class="text-gray-400">Valeur cible :</span> @Formats.Nombre(e.ValeurCible)</span>
+                    }
+                </div>
+                @if (e.Risques.Count > 0)
+                {
+                    <div class="flex flex-wrap gap-1 mt-2">
+                        @foreach (var r in e.Risques) { <AppBadge Variante="warning" Petit="true">@r.Libelle</AppBadge> }
+                    </div>
+                }
+            </div>
+            @if (modifiable)
+            {
+                <div class="flex whitespace-nowrap">
+                    <MudTooltip Text="Risques"><MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.WarningAmber" OnClick="() => RisquesAsync(e)" /></MudTooltip>
+                    <MudTooltip Text="Modifier"><MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => ModifierAsync(e)" /></MudTooltip>
+                    @if (e.Type != TypeElementCL.ObjectifGeneral)
+                    {
+                        <MudTooltip Text="Supprimer"><MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerAsync(e)" /></MudTooltip>
+                    }
+                </div>
+            }
+        </div>
+    };
+
+    private async Task ChangerProgrammeAsync(Ulid? id) { _programmeId = id; await ChargerAsync(); }
+    private async Task ChangerCycleAsync(LigneCycle? c) { _cycle = c; await ChargerAsync(); }
+
+    private async Task ChargerAsync()
+        => _cadre = _programmeId is { } p && _cycle is not null ? await CadreService.ObtenirAsync(p, _cycle.Id) : null;
+
+    private async Task Signaler((bool Ok, string? Erreur) r, string succes)
+    {
+        Snackbar.Add(r.Ok ? succes : r.Erreur!, r.Ok ? Severity.Success : Severity.Error);
+        if (r.Ok) await ChargerAsync();
+    }
+
+    private async Task InitialiserAsync()
+        => await Signaler(await CadreService.InitialiserAsync(_programmeId!.Value, _cycle!.Id), "Cadre logique complété depuis le programme et ses actions.");
+
+    private Task AjouterObjectifSpecifiqueAsync()
+        => EditerAsync(new SaisieElementCadre { Type = TypeElementCL.ObjectifSpecifique }, "Nouvel objectif spécifique");
+
+    private Task AjouterResultatAsync(ElementCadreLogique os)
+        => EditerAsync(new SaisieElementCadre { Type = TypeElementCL.ResultatImmediat, ParentId = os.Id, ActionId = os.ActionId }, "Nouveau résultat immédiat");
+
+    private Task ModifierAsync(ElementCadreLogique e)
+        => EditerAsync(new SaisieElementCadre
+        {
+            Id = e.Id, Type = e.Type, ActionId = e.ActionId, ParentId = e.ParentId, Libelle = e.Libelle,
+            IndicateurId = e.IndicateurId, SourceVerificationId = e.SourceVerificationId, ValeurCible = e.ValeurCible, Ordre = e.Ordre
+        }, $"Modifier : {LibellesBudgetProgramme.ElementCadre[e.Type].ToLowerInvariant()}");
+
+    private async Task EditerAsync(SaisieElementCadre saisie, string titre)
+    {
+        saisie.ProgrammeId = _programmeId!.Value;
+        saisie.CycleId = _cycle!.Id;
+        var parametres = new DialogParameters<DialogElementCadre> { { x => x.Saisie, saisie } };
+        var dialog = await DialogService.ShowAsync<DialogElementCadre>(titre, parametres, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) await Signaler((true, null), "Élément enregistré.");
+    }
+
+    private async Task SupprimerAsync(ElementCadreLogique e)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, $"Supprimer : {e.Libelle}" }, { x => x.Message, "Ses risques sont retirés avec lui." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        if (await (await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres)).Result is not { Canceled: false }) return;
+        await Signaler(await CadreService.SupprimerAsync(e.Id), "Élément supprimé.");
+    }
+
+    private async Task RisquesAsync(ElementCadreLogique e)
+    {
+        var parametres = new DialogParameters<DialogRisques> { { x => x.ElementId, e.Id }, { x => x.Selection, e.Risques.Select(r => r.Id).ToHashSet() } };
+        var dialog = await DialogService.ShowAsync<DialogRisques>("Risques de l'élément", parametres, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) await Signaler((true, null), "Risques enregistrés.");
+    }
+}

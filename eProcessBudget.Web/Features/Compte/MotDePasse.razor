@@ -1,0 +1,74 @@
+@page "/compte/mot-de-passe"
+@inject IAuthentificationService Authentification
+@inject NavigationManager Nav
+
+<PageTitle>Mon mot de passe</PageTitle>
+
+@*
+    Changement de son propre mot de passe. Le mot de passe actuel est exigé ; une fois le
+    changement fait, toutes les sessions du compte (y compris celle-ci) se ferment et
+    l'utilisateur se reconnecte avec le nouveau.
+*@
+
+<PageHeader Titre="Mon mot de passe" Description="Choisissez un nouveau mot de passe pour votre compte." />
+
+<AppCard ClasseSup="max-w-xl">
+    <EditForm Model="_saisie" OnValidSubmit="ChangerAsync">
+        <DataAnnotationsValidator />
+
+        @if (_erreur is not null)
+        {
+            <div class="mb-4">
+                <AppAlert Variante="danger" Titre="Changement impossible">@_erreur</AppAlert>
+            </div>
+        }
+
+        <div class="space-y-4">
+            <MudTextField @bind-Value="_saisie.MotDePasseActuel" Label="Mot de passe actuel"
+                          InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          MaxLength="128" UserAttributes="@(new() { ["autocomplete"] = "current-password" })" />
+
+            <MudTextField @bind-Value="_saisie.NouveauMotDePasse" Label="Nouveau mot de passe"
+                          InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          MaxLength="128" For="() => _saisie.NouveauMotDePasse"
+                          HelperText="@Authentification.DescriptionPolitique"
+                          UserAttributes="@(new() { ["autocomplete"] = "new-password" })" />
+
+            <MudTextField @bind-Value="_saisie.Confirmation" Label="Confirmation"
+                          InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          MaxLength="128" For="() => _saisie.Confirmation"
+                          UserAttributes="@(new() { ["autocomplete"] = "new-password" })" />
+        </div>
+
+        <div class="flex justify-end mt-6">
+            <AppButton Type="submit" Icone="check-circle" EnChargement="_enregistrement">
+                Changer le mot de passe
+            </AppButton>
+        </div>
+    </EditForm>
+</AppCard>
+
+@code {
+    private readonly SaisieNouveauMotDePasse _saisie = new();
+    private bool _enregistrement;
+    private string? _erreur;
+
+    private async Task ChangerAsync()
+    {
+        _enregistrement = true;
+        _erreur = null;
+
+        var (ok, erreur) = await Authentification.ChangerMotDePasseAsync(_saisie.MotDePasseActuel, _saisie.NouveauMotDePasse);
+
+        _enregistrement = false;
+        if (!ok)
+        {
+            _erreur = erreur;
+            return;
+        }
+
+        // La session courante n'est plus valide (empreinte du compte changée) : rechargement
+        // complet vers la connexion, qui retire le cookie.
+        Nav.NavigateTo("/compte/connexion?motif=motdepasse", forceLoad: true);
+    }
+}

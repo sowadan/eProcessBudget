@@ -1,0 +1,264 @@
+@implements IDisposable
+@inject INotificationService Notifications
+@inject INotificationDispatcher Dispatcher
+@inject IUserContextService UserContext
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+@*
+    Cloche de notification de l'en-tête.
+
+    DEUX MÉCANISMES COMPLÉMENTAIRES
+    -------------------------------
+    1. PUSH : abonnement au dispatcher. Une notification créée pour cet utilisateur
+       arrive instantanément — badge incrémenté et toast affiché.
+    2. RAFRAÎCHISSEMENT DE SECOURS toutes les 45 s : couvre ce que le push ne voit pas
+       (notification créée par une autre instance du serveur, push manqué pendant une
+       reconnexion du circuit).
+
+    Le composant se désabonne et arrête son minuteur dans Dispose : sans cela, chaque
+    navigation laisserait un abonné fantôme.
+*@
+
+<div class="relative">
+    <button type="button" @onclick="Basculer" @onclick:stopPropagation="true"
+            class="relative p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Notifications"
+            aria-label="@($"Notifications{(_nonLues > 0 ? $" ({_nonLues} non lues)" : "")}")">
+
+        <div class="w-5 h-5"><AppIcon Nom="bell" /></div>
+
+        @if (_nonLues > 0)
+        {
+            <span class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 text-white text-[10px]
+                         font-bold rounded-full flex items-center justify-center leading-none shadow ring-2 ring-white"
+                  style="background-color: var(--app-primaire);">
+                @(_nonLues > 99 ? "99+" : _nonLues.ToString())
+            </span>
+        }
+    </button>
+
+    @if (_ouvert)
+    {
+        @* Voile transparent : un clic n'importe où ailleurs ferme le volet. *@
+        <div class="fixed inset-0 z-40" @onclick="Fermer"></div>
+
+        <div class="absolute right-0 mt-2 w-[380px] max-w-[calc(100vw-2rem)] bg-white rounded-xl
+                    shadow-2xl border border-gray-200 z-50 overflow-hidden"
+             @onclick:stopPropagation="true">
+
+            <!-- En-tête du volet -->
+            <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+                <div>
+                    <p class="text-sm font-bold text-gray-800">Notifications</p>
+                    <p class="text-xs text-gray-500">
+                        @(_nonLues > 0 ? $"{_nonLues} non lue(s)" : "Tout est lu")
+                    </p>
+                </div>
+
+                @if (_nonLues > 0)
+                {
+                    <button type="button" @onclick="ToutMarquerLu"
+                            class="text-xs font-medium hover:underline" style="color: var(--app-primaire);">
+                        Tout marquer lu
+                    </button>
+                }
+            </div>
+
+            <!-- Liste -->
+            <div class="max-h-[420px] overflow-y-auto divide-y divide-gray-50">
+                @if (_chargement)
+                {
+                    <div class="flex justify-center py-10">
+                        <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Small" />
+                    </div>
+                }
+                else if (_recentes.Count == 0)
+                {
+                    <div class="text-center py-10 text-gray-400">
+                        <MudIcon Icon="@Icons.Material.Outlined.NotificationsNone" Size="Size.Large"
+                                 Style="color:#D1D5DB" />
+                        <p class="text-xs mt-2">Aucune notification non lue</p>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var n in _recentes)
+                    {
+                        var (fond, texte) = NotificationHelpers.Couleurs(n.Type);
+
+                        <button type="button" @onclick="() => Ouvrir(n)"
+                                class="w-full text-left flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors @(n.EstLue ? "" : "bg-blue-50/30")">
+
+                            <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                                 style="background:@fond; color:@texte;">
+                                <MudIcon Icon="@NotificationHelpers.Icone(n.Type)" Size="Size.Small" />
+                            </div>
+
+                            <div class="flex-1 min-w-0">
+                                <p class="text-xs font-semibold text-gray-800">
+                                    @(string.IsNullOrWhiteSpace(n.Titre) ? NotificationHelpers.Libelle(n.Type) : n.Titre)
+                                </p>
+                                <p class="text-xs text-gray-600 line-clamp-2 mt-0.5">@n.Message</p>
+                                <p class="text-[10px] text-gray-400 mt-1">@NotificationHelpers.TempsRelatif(n.DateCreation)</p>
+                            </div>
+
+                            @if (!n.EstLue)
+                            {
+                                <span class="w-2 h-2 rounded-full bg-blue-600 flex-shrink-0 mt-1.5"></span>
+                            }
+                        </button>
+                    }
+                }
+            </div>
+
+            <!-- Pied -->
+            <div class="px-4 py-2.5 border-t border-gray-100 text-center bg-gray-50">
+                <button type="button" @onclick="VoirToutes"
+                        class="text-xs font-medium hover:underline" style="color: var(--app-secondaire);">
+                    Voir toutes les notifications →
+                </button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _ouvert;
+    private bool _chargement;
+    private int _nonLues;
+    private Ulid _userId;
+
+    private List<Notification> _recentes = new();
+    private IDisposable? _abonnement;
+    private System.Threading.Timer? _minuteur;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _userId = await UserContext.ObtenirUserIdAsync();
+            if (_userId == Ulid.Empty) return;
+
+            await RafraichirCompteurAsync();
+
+            // Push temps réel.
+            _abonnement = Dispatcher.Souscrire(_userId, OnNotificationRecueAsync);
+
+            // Filet de sécurité.
+            _minuteur = new System.Threading.Timer(
+                async _ => { try { await InvokeAsync(RafraichirCompteurAsync); } catch { } },
+                null, TimeSpan.FromSeconds(45), TimeSpan.FromSeconds(45));
+        }
+        catch
+        {
+            // Référentiel indisponible : la cloche reste simplement vide.
+        }
+    }
+
+    /// <summary>
+    /// Notification poussée en temps réel : on incrémente le badge, on l'insère en tête
+    /// de la liste si le volet est déjà chargé, et on affiche un toast cliquable.
+    /// </summary>
+    private Task OnNotificationRecueAsync(NotificationTempsReel n) => InvokeAsync(() =>
+    {
+        _nonLues++;
+
+        // Le rafraîchissement de secours a pu la ramener entre-temps.
+        if (_recentes.All(x => x.Id != n.NotificationId))
+        {
+            _recentes.Insert(0, new Notification
+            {
+                Id            = n.NotificationId,
+                UtilisateurId = _userId,
+                Type          = n.Type,
+                Titre         = n.Titre,
+                Message       = n.Message,
+                Lien          = n.Lien,
+                DateCreation  = n.DateCreation,
+                EstLue        = false
+            });
+
+            if (_recentes.Count > 8) _recentes = _recentes.Take(8).ToList();
+        }
+
+        var titre = string.IsNullOrWhiteSpace(n.Titre) ? NotificationHelpers.Libelle(n.Type) : n.Titre;
+
+        // RenderFragment plutôt qu'une chaîne : MudBlazor affiche une string en texte brut,
+        // et le contenu de la notification reste encodé (pas d'injection HTML).
+        RenderFragment contenu = @<span><strong>@titre</strong><br />@n.Message</span>;
+
+        Snackbar.Add(contenu,
+            NotificationHelpers.Gravite(n.Type),
+            config => config.OnClick = _ =>
+            {
+                Nav.NavigateTo(string.IsNullOrWhiteSpace(n.Lien) ? "/notifications" : n.Lien);
+                return Task.CompletedTask;
+            });
+
+        StateHasChanged();
+    });
+
+    private async Task RafraichirCompteurAsync()
+    {
+        if (_userId == Ulid.Empty) return;
+
+        var nb = await Notifications.CompterNonLuesAsync(_userId);
+        if (nb == _nonLues) return;
+
+        _nonLues = nb;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task Basculer()
+    {
+        _ouvert = !_ouvert;
+        if (!_ouvert || _userId == Ulid.Empty) return;
+
+        _chargement = true;
+        StateHasChanged();
+
+        // Le volet ne montre que le non-lu ; l'historique complet est sur /notifications.
+        _recentes = await Notifications.ObtenirRecentesAsync(_userId, 8, uniquementNonLues: true);
+        _nonLues = await Notifications.CompterNonLuesAsync(_userId);
+
+        _chargement = false;
+    }
+
+    private void Fermer() => _ouvert = false;
+
+    private async Task ToutMarquerLu()
+    {
+        if (_userId == Ulid.Empty) return;
+
+        await Notifications.MarquerToutesLuesAsync(_userId);
+        _recentes.Clear();
+        _nonLues = 0;
+    }
+
+    private async Task Ouvrir(Notification n)
+    {
+        if (!n.EstLue)
+        {
+            await Notifications.MarquerLueAsync(n.Id, _userId);
+            _nonLues = Math.Max(0, _nonLues - 1);
+        }
+
+        _ouvert = false;
+        Nav.NavigateTo(string.IsNullOrWhiteSpace(n.Lien) ? "/notifications" : n.Lien);
+    }
+
+    private void VoirToutes()
+    {
+        _ouvert = false;
+        Nav.NavigateTo("/notifications");
+    }
+
+    public void Dispose()
+    {
+        _abonnement?.Dispose();
+        _minuteur?.Dispose();
+    }
+}
+
+

@@ -1,0 +1,312 @@
+@page "/parametrage/nomenclature"
+@inject INomenclatureService Nomenclature
+@inject IReferentielService<Axe> ServiceAxe
+@inject IReferentielService<Rubrique> ServiceRubrique
+@inject IReferentielService<SousRubrique> ServiceSousRubrique
+@inject IReferentielService<LigneBudgetaire> ServiceLigne
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Nomenclature budgétaire — Paramétrage</PageTitle>
+
+@*
+    Nomenclature budgétaire en arborescence : axe › rubrique › sous-rubrique › ligne
+    (cahier fonctionnel § 3.2.4). Chaque niveau n'est lu qu'au dépliage de son parent.
+    Les formulaires et les règles sont ceux des listes de référentiels.
+*@
+
+<AutoriseSi DroitsRequis="new[] { TypeDroit.ParametrageLire, TypeDroit.ParametrageGerer }">
+    <PageHeader Titre="Nomenclature budgétaire" Description="Axes, rubriques, sous-rubriques et lignes, avec les comptes d'imputation des lignes.">
+        <BreadcrumbContent>
+            <a href="/" class="hover:underline">Accueil</a><span>/</span>
+            <a href="/parametrage" class="hover:underline">Paramétrage</a>
+        </BreadcrumbContent>
+        <ActionsContent>
+            @if (_peutGerer)
+            {
+                <AppButton Icone="plus" OnClick="AjouterAxeAsync">Ajouter un axe</AppButton>
+            }
+        </ActionsContent>
+    </PageHeader>
+
+    <AppCard PaddingCorps="false">
+        @if (_chargement)
+        {
+            <div class="flex justify-center py-16"><MudProgressCircular Indeterminate="true" Color="Color.Primary" /></div>
+        }
+        else if (_axes.Count == 0)
+        {
+            <EtatVide Icone="collection" Titre="Aucun axe" Message="Les axes sont créés avec l'organisme ; complétez les données initiales depuis la page Organisme." />
+        }
+        else
+        {
+            <ul class="divide-y divide-gray-100">
+                @foreach (var axe in _axes)
+                {
+                    @Noeud(axe, 0)
+                }
+            </ul>
+        }
+    </AppCard>
+
+    <p class="text-xs text-gray-500 mt-3">
+        <span class="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1"></span>
+        Ligne sans compte d'imputation : à compléter (chaque ligne est rattachée à au moins un compte).
+    </p>
+</AutoriseSi>
+
+@code {
+    private List<NoeudNomenclature> _axes = new();
+    private readonly Dictionary<Ulid, List<NoeudNomenclature>> _enfants = new();
+    private readonly HashSet<Ulid> _ouverts = new();
+    private readonly Dictionary<Ulid, NoeudNomenclature?> _parentDe = new();
+    private bool _chargement = true;
+    private bool _peutGerer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _peutGerer = await ServiceAxe.PeutGererAsync();
+        await ChargerAxesAsync();
+        _chargement = false;
+    }
+
+    // ═════ Rendu d'un nœud (récursif) ═════════════════════════════════════════
+
+    private RenderFragment Noeud(NoeudNomenclature n, int profondeur) => __builder =>
+    {
+        var ouvert = _ouverts.Contains(n.Id);
+        <li>
+            <div class="flex items-center gap-2 py-2 pr-3 hover:bg-gray-50 @(n.EstActif ? "" : "opacity-50")"
+                 style="padding-left:@(0.75 + profondeur * 1.5)rem">
+                @if (n.Niveau != NiveauNomenclature.Ligne)
+                {
+                    <button type="button" class="w-6 h-6 flex items-center justify-center text-gray-500 hover:text-gray-900 rounded"
+                            aria-label="@(ouvert ? "Replier" : "Déplier")" aria-expanded="@ouvert" @onclick="() => BasculerAsync(n)">
+                        <MudIcon Icon="@(ouvert ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.ChevronRight)" Size="Size.Small" />
+                    </button>
+                }
+                else
+                {
+                    <span class="w-6"></span>
+                }
+                <span class="font-mono text-xs font-semibold text-gray-800 min-w-16">@n.Code</span>
+                <span class="text-sm text-gray-700 flex-1 min-w-0 truncate">@n.Libelle</span>
+                @if (n.SansCompte)
+                {
+                    <span class="w-2 h-2 rounded-full bg-amber-400" title="Aucun compte d'imputation"></span>
+                }
+                @if (!string.IsNullOrEmpty(n.Detail))
+                {
+                    <span class="hidden md:inline text-xs text-gray-400 truncate max-w-72">@n.Detail</span>
+                }
+                @if (n.Niveau != NiveauNomenclature.Ligne)
+                {
+                    <AppBadge Petit="true">@n.NbEnfants</AppBadge>
+                }
+                @if (!n.EstActif)
+                {
+                    <AppBadge Variante="neutral" Petit="true">Inactif</AppBadge>
+                }
+                <span class="flex items-center whitespace-nowrap">
+                    @if (n.Niveau == NiveauNomenclature.Ligne)
+                    {
+                        <MudTooltip Text="Comptes d'imputation">
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.AccountBalance" OnClick="() => ComptesAsync(n)" />
+                        </MudTooltip>
+                    }
+                    @if (_peutGerer)
+                    {
+                        @if (n.Niveau != NiveauNomenclature.Ligne)
+                        {
+                            <MudTooltip Text="@($"Ajouter {LibelleEnfant(n.Niveau)}")">
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Add" OnClick="() => AjouterEnfantAsync(n)" />
+                            </MudTooltip>
+                        }
+                        <MudTooltip Text="Modifier">
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="() => ModifierAsync(n)" />
+                        </MudTooltip>
+                        <MudTooltip Text="@(n.EstActif ? "Désactiver" : "Activer")">
+                            <MudIconButton Size="Size.Small" Icon="@(n.EstActif ? Icons.Material.Outlined.ToggleOn : Icons.Material.Outlined.ToggleOff)"
+                                           OnClick="() => BasculerEtatAsync(n)" />
+                        </MudTooltip>
+                        @if (n.Niveau != NiveauNomenclature.Axe)
+                        {
+                            <MudTooltip Text="Supprimer">
+                                <MudIconButton Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Outlined.Delete" OnClick="() => SupprimerAsync(n)" />
+                            </MudTooltip>
+                        }
+                    }
+                </span>
+            </div>
+            @if (ouvert && _enfants.TryGetValue(n.Id, out var enfants))
+            {
+                @if (enfants.Count == 0)
+                {
+                    <p class="text-xs text-gray-400 py-2" style="padding-left:@(3.5 + profondeur * 1.5)rem">Aucun élément.</p>
+                }
+                else
+                {
+                    <ul>
+                        @foreach (var e in enfants)
+                        {
+                            @Noeud(e, profondeur + 1)
+                        }
+                    </ul>
+                }
+            }
+        </li>
+    };
+
+    private static string LibelleEnfant(NiveauNomenclature n) => n switch
+    {
+        NiveauNomenclature.Axe => "une rubrique",
+        NiveauNomenclature.Rubrique => "une sous-rubrique",
+        _ => "une ligne"
+    };
+
+    // ═════ Chargement ═════════════════════════════════════════════════════════
+
+    private async Task ChargerAxesAsync()
+    {
+        _axes = await Nomenclature.ListerAxesAsync();
+        foreach (var a in _axes) _parentDe[a.Id] = null;
+    }
+
+    private async Task ChargerEnfantsAsync(NoeudNomenclature parent)
+    {
+        var enfants = await Nomenclature.ListerEnfantsAsync(parent.Niveau, parent.Id);
+        _enfants[parent.Id] = enfants;
+        foreach (var e in enfants) _parentDe[e.Id] = parent;
+    }
+
+    private async Task BasculerAsync(NoeudNomenclature n)
+    {
+        if (!_ouverts.Remove(n.Id))
+        {
+            await ChargerEnfantsAsync(n);
+            _ouverts.Add(n.Id);
+        }
+    }
+
+    /// <summary>Recharge la liste qui contient le nœud (libellé, état, nombre d'enfants à jour).</summary>
+    private async Task RechargerFratrieAsync(NoeudNomenclature n)
+    {
+        var parent = _parentDe.GetValueOrDefault(n.Id);
+        if (parent is null) await ChargerAxesAsync();
+        else
+        {
+            // Le nœud parent est un objet immuable : on recharge aussi sa propre fratrie pour son compteur.
+            await ChargerEnfantsAsync(parent);
+        }
+    }
+
+    // ═════ Actions ════════════════════════════════════════════════════════════
+
+    private async Task AjouterAxeAsync()
+    {
+        if (await OuvrirAsync(new Axe { TypeAxe = TypeAxe.Depense, Section = Section.Fonctionnement }, typeof(FormulaireAxe), "Ajouter un axe"))
+            await ChargerAxesAsync();
+    }
+
+    private async Task AjouterEnfantAsync(NoeudNomenclature n)
+    {
+        var ok = n.Niveau switch
+        {
+            NiveauNomenclature.Axe => await OuvrirAsync(new Rubrique { AxeId = n.Id }, typeof(FormulaireRubrique), $"Ajouter une rubrique à « {n.Code} »"),
+            NiveauNomenclature.Rubrique => await OuvrirAsync(new SousRubrique { RubriqueId = n.Id }, typeof(FormulaireSousRubrique), $"Ajouter une sous-rubrique à « {n.Code} »"),
+            _ => await OuvrirAsync(new LigneBudgetaire { SousRubriqueId = n.Id, Sens = SensDe(n) }, typeof(FormulaireLigneBudgetaire), $"Ajouter une ligne à « {n.Code} »")
+        };
+        if (!ok) return;
+
+        await ChargerEnfantsAsync(n);
+        _ouverts.Add(n.Id);
+        await RechargerFratrieAsync(n);
+    }
+
+    /// <summary>Sens proposé pour une nouvelle ligne : celui de l'axe d'origine.</summary>
+    private SensLigne SensDe(NoeudNomenclature n)
+    {
+        var courant = n;
+        while (_parentDe.GetValueOrDefault(courant.Id) is { } parent) courant = parent;
+        return courant.Detail?.StartsWith(LibellesParametrage.TypeAxe[TypeAxe.Recette]) == true ? SensLigne.Recette : SensLigne.Depense;
+    }
+
+    private async Task ModifierAsync(NoeudNomenclature n)
+    {
+        var ok = n.Niveau switch
+        {
+            NiveauNomenclature.Axe => await ModifierTypeAsync(ServiceAxe, n, typeof(FormulaireAxe)),
+            NiveauNomenclature.Rubrique => await ModifierTypeAsync(ServiceRubrique, n, typeof(FormulaireRubrique)),
+            NiveauNomenclature.SousRubrique => await ModifierTypeAsync(ServiceSousRubrique, n, typeof(FormulaireSousRubrique)),
+            _ => await ModifierTypeAsync(ServiceLigne, n, typeof(FormulaireLigneBudgetaire))
+        };
+        if (ok) await RechargerFratrieAsync(n);
+    }
+
+    private async Task<bool> ModifierTypeAsync<T>(IReferentielService<T> service, NoeudNomenclature n, Type formulaire)
+        where T : EntiteOrganisme, new()
+    {
+        var element = await service.ObtenirAsync(n.Id);
+        return element is not null && await OuvrirAsync(element, formulaire, $"Modifier « {n.Code} »");
+    }
+
+    private async Task<bool> OuvrirAsync<T>(T element, Type formulaire, string titre) where T : EntiteOrganisme, new()
+    {
+        var parametres = new DialogParameters<DialogReferentiel<T>> { { x => x.Element, element }, { x => x.Formulaire, formulaire } };
+        var dialog = await DialogService.ShowAsync<DialogReferentiel<T>>(titre, parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var ok = await dialog.Result is { Canceled: false };
+        if (ok) Snackbar.Add("Enregistré.", Severity.Success);
+        return ok;
+    }
+
+    private async Task BasculerEtatAsync(NoeudNomenclature n)
+    {
+        var (ok, erreur) = n.Niveau switch
+        {
+            NiveauNomenclature.Axe => await ServiceAxe.ChangerEtatAsync(n.Id, !n.EstActif),
+            NiveauNomenclature.Rubrique => await ServiceRubrique.ChangerEtatAsync(n.Id, !n.EstActif),
+            NiveauNomenclature.SousRubrique => await ServiceSousRubrique.ChangerEtatAsync(n.Id, !n.EstActif),
+            _ => await ServiceLigne.ChangerEtatAsync(n.Id, !n.EstActif)
+        };
+        if (!ok) { Snackbar.Add(erreur!, Severity.Error); return; }
+        await RechargerFratrieAsync(n);
+    }
+
+    private async Task SupprimerAsync(NoeudNomenclature n)
+    {
+        var parametres = new DialogParameters<DialogConfirmation>
+        {
+            { x => x.Titre, $"Supprimer « {n.Code} — {n.Libelle} »" },
+            { x => x.Message, "Refusé si l'élément est utilisé ; il reste alors possible de le désactiver." },
+            { x => x.Libelle, "Supprimer" }, { x => x.Danger, true }
+        };
+        var dialog = await DialogService.ShowAsync<DialogConfirmation>("Confirmation", parametres);
+        if (await dialog.Result is not { Canceled: false }) return;
+
+        var (ok, erreur) = n.Niveau switch
+        {
+            NiveauNomenclature.Rubrique => await ServiceRubrique.SupprimerAsync(n.Id),
+            NiveauNomenclature.SousRubrique => await ServiceSousRubrique.SupprimerAsync(n.Id),
+            _ => await ServiceLigne.SupprimerAsync(n.Id)
+        };
+        if (!ok) { Snackbar.Add(erreur!, Severity.Error); return; }
+
+        _ouverts.Remove(n.Id);
+        var parent = _parentDe.GetValueOrDefault(n.Id);
+        await RechargerFratrieAsync(n);
+        if (parent is not null) await RechargerFratrieAsync(parent);
+    }
+
+    private async Task ComptesAsync(NoeudNomenclature n)
+    {
+        var parametres = new DialogParameters<DialogComptesLigne> { { x => x.LigneId, n.Id }, { x => x.PeutGerer, _peutGerer } };
+        var dialog = await DialogService.ShowAsync<DialogComptesLigne>($"Comptes d'imputation : {n.Code}", parametres,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Comptes enregistrés.", Severity.Success);
+            await RechargerFratrieAsync(n);
+        }
+    }
+}
